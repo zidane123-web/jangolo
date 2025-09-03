@@ -1,7 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../../widgets/outlined_floating_field.dart';
+// ➜ CORRECTION du chemin d'importation
+import '../../../../shared/widgets/outlined_floating_field.dart';
 
 class CompanyInfoScreen extends StatefulWidget {
   const CompanyInfoScreen({
@@ -45,7 +46,6 @@ class _CompanyInfoScreenState extends State<CompanyInfoScreen> {
 
       final batch = FirebaseFirestore.instance.batch();
 
-      // 1. Créer le document de l'entreprise
       final orgRef = FirebaseFirestore.instance.collection('organisations').doc();
       final organizationId = orgRef.id;
 
@@ -56,7 +56,6 @@ class _CompanyInfoScreenState extends State<CompanyInfoScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // 2. Créer le document utilisateur dans une collection de niveau supérieur
       final userRef = FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid);
       batch.set(userRef, {
         'firstName': widget.firstName,
@@ -67,10 +66,8 @@ class _CompanyInfoScreenState extends State<CompanyInfoScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // 3. Appliquer toutes les écritures atomiquement
       await batch.commit();
 
-      // La navigation vers HomeShell sera gérée par AuthGate
     } on FirebaseAuthException catch (e) {
       String message = 'Une erreur est survenue. Réessayez.';
       if (e.code == 'weak-password') {
@@ -163,7 +160,8 @@ class _CompanyInfoScreenState extends State<CompanyInfoScreen> {
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFFFF7A59),
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor: const Color(0xFFFF7A59).withOpacity(0.5),
+                        // ➜ CORRECTION de la dépréciation
+                        disabledBackgroundColor: const Color(0xFFFF7A59).withAlpha(128),
                         textStyle: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w700),
                         shape: RoundedRectangleBorder(

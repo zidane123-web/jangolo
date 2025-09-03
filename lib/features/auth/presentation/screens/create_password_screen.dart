@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../widgets/outlined_floating_field.dart';
-import 'company_info_screen.dart'; // Étape 4
+// ➜ CORRECTION du chemin d'importation
+import '../../../../shared/widgets/outlined_floating_field.dart';
+import 'company_info_screen.dart';
 
+// ... le reste du fichier reste identique
 class CreatePasswordScreen extends StatefulWidget {
   const CreatePasswordScreen({
     super.key,

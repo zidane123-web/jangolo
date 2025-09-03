@@ -25,6 +25,7 @@ class _MainNavShellState extends State<MainNavShell> {
 
   void _onItemTapped(int index) => setState(() => _selectedIndex = index);
 
+  // CORRECTION 1 : @Override remplacé par @override
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -34,7 +35,8 @@ class _MainNavShellState extends State<MainNavShell> {
       bottomNavigationBar: NavigationBar(
         height: 68,
         backgroundColor: cs.surface,
-        indicatorColor: cs.primaryContainer.withOpacity(0.4),
+        // CORRECTION 2 : .withOpacity(0.4) remplacé par .withAlpha(102)
+        indicatorColor: cs.primaryContainer.withAlpha(102),
         surfaceTintColor: Colors.transparent,
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onItemTapped,

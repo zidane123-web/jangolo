@@ -1,10 +1,12 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../widgets/outlined_floating_field.dart';
+// ➜ CORRECTION du chemin d'importation
+import '../../../../shared/widgets/outlined_floating_field.dart';
 import 'verify_email_screen.dart';
 import 'login_screen.dart';
 
+// ... le reste du fichier reste identique
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
 

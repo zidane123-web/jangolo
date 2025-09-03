@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart'; // Import Firebase Core
 import 'package:intl/date_symbol_data_local.dart'; // <-- 1. IMPORT NÉCESSAIRE
 import 'firebase_options.dart'; // Import the generated file
-import 'src/screens/auth/auth_gate.dart';
+// ➜ L'IMPORT EST MIS À JOUR ICI
+import 'core/auth/auth_gate.dart';
 
 Future<void> main() async {
   // S'assurer que les bindings Flutter sont initialisés

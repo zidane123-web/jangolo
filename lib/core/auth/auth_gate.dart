@@ -1,9 +1,13 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../onboarding/onboarding_screen.dart';
-import 'login_screen.dart';
-import '../../navigation/main_nav_shell.dart';
+
+// ➜ IMPORTS MIS À JOUR vers le dossier features/auth
+import '../../features/auth/presentation/screens/onboarding_screen.dart';
+import '../../features/auth/presentation/screens/login_screen.dart';
+
+// ➜ L'import vers le shell de navigation ne change pas
+import '../navigation/main_nav_shell.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -39,21 +43,17 @@ class _AuthGateState extends State<AuthGate> {
       return const OnboardingScreen();
     }
 
-    // This StreamBuilder is the new "smart" part
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // If the snapshot is still loading, show a progress indicator
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
-        // If the user is logged in, show the dashboard
         if (snapshot.hasData) {
           return const MainNavShell();
         }
 
-        // Otherwise, the user is not logged in, show the login screen
         return const LoginScreen();
       },
     );

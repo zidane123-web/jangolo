@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "370850548318",
+    "project_id": "jangolo-89938",
+    "storage_bucket": "jangolo-89938.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:370850548318:android:96d8e459685c55cc2482cf",
+        "android_client_info": {
+          "package_name": "com.example.firstapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyChHaTBzr8BUZzqhJbm3sU2KhM8Lxxs5DE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

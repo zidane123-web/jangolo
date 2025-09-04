@@ -1,9 +1,20 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-// ➜ L'import pointe vers le nouvel emplacement
+
+// ➜ --- NOUVEAUX IMPORTS ---
+// Import de notre logique métier (Domain et Data)
+import '../../data/datasources/remote_datasource.dart';
+import '../../data/repositories/purchase_repository_impl.dart';
+import '../../domain/entities/purchase_entity.dart';
+import '../../domain/usecases/get_all_purchases.dart';
+
+// L'import de la page de création ne change pas
 import 'create_purchase_screen.dart';
 
-// Nouvel enum pour les filtres de statut simplifiés
+
+// L'enum de filtre reste local à cet écran
 enum _FilterStatus { paid, unpaid, draft }
 
 class PurchasesListScreen extends StatefulWidget {
@@ -45,7 +56,6 @@ class _PurchasesListScreenState extends State<PurchasesListScreen>
           ),
           IconButton(
             tooltip: 'Nouveau bon de commande',
-            // --- MODIFICATION ICI ---
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
@@ -77,7 +87,7 @@ class _PurchasesListScreenState extends State<PurchasesListScreen>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 }
 
-// ================== Onglet des Commandes =====================================
+// ================== Onglet des Commandes (entièrement refactorisé) =====================================
 class _OrdersTab extends StatefulWidget {
   const _OrdersTab();
 
@@ -87,154 +97,145 @@ class _OrdersTab extends StatefulWidget {
 
 class _OrdersTabState extends State<_OrdersTab>
     with AutomaticKeepAliveClientMixin {
-  final List<_Purchase> _all = [
-    _Purchase(
-      id: 'PO-1007',
-      supplier: 'Fournisseur Express',
-      status: _PStatus.approved,
-      createdAt: DateTime.now(), // Achat d'aujourd'hui
-      eta: DateTime.now().add(const Duration(days: 5)),
-      amount: 150.75,
-      warehouse: 'Entrepôt Cotonou',
-    ),
-    _Purchase(
-      id: 'PO-1001',
-      supplier: 'TechDistrib SARL',
-      status: _PStatus.approved,
-      createdAt: DateTime(2025, 8, 21),
-      eta: DateTime(2025, 9, 7),
-      amount: 4580.00,
-      warehouse: 'Entrepôt Cotonou',
-    ),
-    _Purchase(
-      id: 'PO-1002',
-      supplier: 'MobilePlus Group',
-      status: _PStatus.sent,
-      createdAt: DateTime(2025, 8, 28),
-      eta: DateTime(2025, 9, 5),
-      amount: 12250.50,
-      warehouse: 'Magasin Porto-Novo',
-    ),
-    _Purchase(
-      id: 'PO-1003',
-      supplier: 'Global Gadgets',
-      status: _PStatus.partial,
-      createdAt: DateTime(2025, 8, 10),
-      eta: DateTime(2025, 8, 30),
-      amount: 7899.90,
-      warehouse: 'Entrepôt Cotonou',
-    ),
-    _Purchase(
-      id: 'PO-1004',
-      supplier: 'TechDistrib SARL',
-      status: _PStatus.received,
-      createdAt: DateTime(2025, 7, 29),
-      eta: DateTime(2025, 8, 8),
-      amount: 3150.00,
-      warehouse: 'Magasin Porto-Novo',
-    ),
-    _Purchase(
-      id: 'PO-1005',
-      supplier: 'Accessories World',
-      status: _PStatus.draft,
-      createdAt: DateTime(2025, 9, 1),
-      eta: DateTime(2025, 9, 15),
-      amount: 980.00,
-      warehouse: 'Entrepôt Cotonou',
-    ),
-    _Purchase(
-      id: 'PO-1006',
-      supplier: 'MobilePlus Group',
-      status: _PStatus.paid,
-      createdAt: DateTime(2025, 7, 12),
-      eta: DateTime(2025, 7, 25),
-      amount: 16420.75,
-      warehouse: 'Magasin Porto-Novo',
-    ),
-  ];
+      
+  // ➜ --- Initialisation de notre architecture ---
+  late final GetAllPurchases _getAllPurchases;
+  
+  // ➜ Future pour récupérer l'organizationId une seule fois
+  Future<String?>? _organizationIdFuture;
 
-  _FilterStatus? _statusFilter; // Utilise le nouvel enum
+  _FilterStatus? _statusFilter;
   DateTime _selectedDate = DateTime.now();
+  
+  @override
+  void initState() {
+    super.initState();
+    // On instancie nos classes ici. Dans une grosse app, on utiliserait un injecteur de dépendances.
+    final remoteDataSource = PurchaseRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
+    final repository = PurchaseRepositoryImpl(remoteDataSource: remoteDataSource);
+    _getAllPurchases = GetAllPurchases(repository);
 
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2101),
-    );
-    if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-      });
-    }
+    // On lance la récupération de l'ID de l'organisation
+    _organizationIdFuture = _getOrganizationId();
   }
+  
+  /// Récupère l'ID de l'organisation de l'utilisateur actuellement connecté.
+  Future<String?> _getOrganizationId() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
 
-  bool _isSameDay(DateTime date1, DateTime date2) {
-    return date1.year == date2.year &&
-        date1.month == date2.month &&
-        date1.day == date2.day;
-  }
-
-  // Helper pour la nouvelle logique de filtre
-  bool _matchesFilter(_PStatus purchaseStatus, _FilterStatus filter) {
-    switch (filter) {
-      case _FilterStatus.paid:
-        return purchaseStatus == _PStatus.paid;
-      case _FilterStatus.draft:
-        return purchaseStatus == _PStatus.draft;
-      case _FilterStatus.unpaid:
-        return purchaseStatus != _PStatus.paid &&
-            purchaseStatus != _PStatus.draft;
-    }
+    final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
+    return userDoc.data()?['organizationId'] as String?;
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context); // Important pour AutomaticKeepAliveClientMixin
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
 
-    final list = _all.where((p) {
-      final statusMatch =
-          _statusFilter == null || _matchesFilter(p.status, _statusFilter!);
+    // ➜ --- Utilisation de FutureBuilder et StreamBuilder ---
+    return FutureBuilder<String?>(
+      future: _organizationIdFuture,
+      builder: (context, orgSnapshot) {
+        if (orgSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (orgSnapshot.hasError || !orgSnapshot.hasData || orgSnapshot.data == null) {
+          return const Center(child: Text("Impossible de charger les informations de l'organisation."));
+        }
+
+        final organizationId = orgSnapshot.data!;
+
+        return StreamBuilder<List<PurchaseEntity>>(
+          stream: _getAllPurchases(organizationId),
+          builder: (context, purchaseSnapshot) {
+            if (purchaseSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (purchaseSnapshot.hasError) {
+              return Center(child: Text("Erreur: ${purchaseSnapshot.error}"));
+            }
+            if (!purchaseSnapshot.hasData || purchaseSnapshot.data!.isEmpty) {
+              return const Center(child: Text("Aucun achat trouvé."));
+            }
+
+            final allPurchases = purchaseSnapshot.data!;
+            final filteredList = _filterPurchases(allPurchases);
+            final stats = _computeStats(allPurchases);
+
+            return _buildPurchaseList(filteredList, stats);
+          },
+        );
+      },
+    );
+  }
+
+  // ➜ --- Logique de filtrage et de statistiques mise à jour ---
+  List<PurchaseEntity> _filterPurchases(List<PurchaseEntity> allPurchases) {
+    return allPurchases.where((p) {
+      final statusMatch = _statusFilter == null || _matchesFilter(p.status, _statusFilter!);
       final dateMatch = _isSameDay(p.createdAt, _selectedDate);
       return statusMatch && dateMatch;
     }).toList();
+  }
+  
+  bool _matchesFilter(PurchaseStatus purchaseStatus, _FilterStatus filter) {
+    switch (filter) {
+      case _FilterStatus.paid:
+        return purchaseStatus == PurchaseStatus.paid;
+      case _FilterStatus.draft:
+        return purchaseStatus == PurchaseStatus.draft;
+      case _FilterStatus.unpaid:
+        return purchaseStatus != PurchaseStatus.paid && purchaseStatus != PurchaseStatus.draft;
+    }
+  }
 
-    final stats = _computeStats(_all);
+  _PStats _computeStats(List<PurchaseEntity> list) {
+    final open = list.where((p) => p.status != PurchaseStatus.paid && p.status != PurchaseStatus.received).toList();
+    final debt = open.fold(0.0, (sum, p) => sum + p.balanceDue);
+    return _PStats(openCount: open.length, supplierDebt: debt);
+  }
+
+  // ➜ --- UI principale extraite dans une méthode pour plus de clarté ---
+  Widget _buildPurchaseList(List<PurchaseEntity> list, _PStats stats) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
 
     return CustomScrollView(
       slivers: [
-        // KPIs
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: _KpiGrid(children: [
               _KpiCard(
-                  icon: Icons.move_to_inbox_outlined,
-                  label: 'À réceptionner',
-                  value: '${stats.openCount}'),
-              const _KpiCard(
-                  icon: Icons.account_balance_wallet_outlined,
-                  label: 'Dettes fournisseurs',
-                  value: '1 450 000 F'),
+                icon: Icons.move_to_inbox_outlined,
+                label: 'À réceptionner',
+                value: '${stats.openCount}',
+              ),
+              _KpiCard(
+                icon: Icons.account_balance_wallet_outlined,
+                label: 'Dettes fournisseurs',
+                value: _money(stats.supplierDebt),
+              ),
             ]),
           ),
         ),
-
-        // Filtre par date
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: _DateFilterChip(
               selectedDate: _selectedDate,
-              onTap: () => _selectDate(context),
+              onTap: () async {
+                final DateTime? picked = await showDatePicker(
+                  context: context,
+                  initialDate: _selectedDate,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2101),
+                );
+                if (picked != null) setState(() => _selectedDate = picked);
+              },
             ),
           ),
         ),
-
-        // Filtres par statut (chips)
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -244,13 +245,9 @@ class _OrdersTabState extends State<_OrdersTab>
             ),
           ),
         ),
-
-        // Liste
         if (list.isEmpty)
           const SliverFillRemaining(
-            child: Center(
-              child: Text("Aucun achat trouvé pour cette date."),
-            ),
+            child: Center(child: Text("Aucun achat trouvé pour cette date.")),
           )
         else
           SliverPadding(
@@ -260,16 +257,14 @@ class _OrdersTabState extends State<_OrdersTab>
               separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, i) {
                 final p = list[i];
-                final late = _isLate(p);
                 final color = _statusColor(p.status);
                 return InkWell(
-                  onTap: () => _snack('Détails PO bientôt 😉'),
+                  onTap: () {},
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      border: Border.all(
-                          color: cs.outlineVariant.withOpacity(0.6)),
+                      border: Border.all(color: cs.outlineVariant.withOpacity(0.6)),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Row(
@@ -283,14 +278,11 @@ class _OrdersTabState extends State<_OrdersTab>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('${p.id} • ${p.supplier}',
-                                  style: tt.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600)),
+                              Text('${p.id} • ${p.supplier}', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                               const SizedBox(height: 2),
                               Text(
                                 '${_statusLabel(p.status)} • Créé: ${_d(p.createdAt)} • ETA: ${_d(p.eta)} • ${p.warehouse}',
-                                style:
-                                    tt.bodySmall?.copyWith(color: cs.outline),
+                                style: tt.bodySmall?.copyWith(color: cs.outline),
                               ),
                             ],
                           ),
@@ -299,24 +291,19 @@ class _OrdersTabState extends State<_OrdersTab>
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text(_money(p.amount),
-                                style: tt.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700)),
+                            Text(_money(p.grandTotal), style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                             const SizedBox(height: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: (late ? Colors.orange : color)
-                                    .withOpacity(0.12),
+                                color: (p.isLate ? Colors.orange : color).withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                    color: late ? Colors.orange : color),
+                                border: Border.all(color: p.isLate ? Colors.orange : color),
                               ),
                               child: Text(
-                                late ? 'En retard' : _statusShort(p.status),
+                                p.isLate ? 'En retard' : _statusShort(p.status),
                                 style: TextStyle(
-                                  color: late ? Colors.orange[700] : color,
+                                  color: p.isLate ? Colors.orange[700] : color,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -334,104 +321,58 @@ class _OrdersTabState extends State<_OrdersTab>
     );
   }
 
-  void _snack(String m) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  // ➜ --- Méthodes utilitaires adaptées pour PurchaseEntity ---
+  bool _isSameDay(DateTime date1, DateTime date2) =>
+      date1.year == date2.year && date1.month == date2.month && date1.day == date2.day;
+  
+  String _d(DateTime d) => DateFormat('dd/MM/yyyy', 'fr_FR').format(d);
+  String _money(double v) => NumberFormat.currency(locale: 'fr_FR', symbol: 'F', decimalDigits: 0).format(v);
 
-  _PStats _computeStats(List<_Purchase> list) {
-    final now = DateTime.now();
-    final count = list.length;
-    final open = list.where((p) => !_isClosed(p.status)).toList();
-    final openCount = open.length;
-    final lateCount = open.where((p) => p.eta.isBefore(now)).length;
-    final openAmount = open.fold(0.0, (s, p) => s + p.amount);
-    return _PStats(
-        count: count,
-        openCount: openCount,
-        lateCount: lateCount,
-        openAmount: openAmount);
-  }
-
-  bool _isClosed(_PStatus s) => s == _PStatus.paid;
-  bool _isLate(_Purchase p) =>
-      !_isClosed(p.status) && p.eta.isBefore(DateTime.now());
-
-  String _d(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-  String _money(double v) => '${v.toStringAsFixed(2)} F';
-
-  Color _statusColor(_PStatus s) {
+  Color _statusColor(PurchaseStatus s) {
     switch (s) {
-      case _PStatus.draft:
-        return Colors.grey;
-      case _PStatus.approved:
-        return Colors.blue;
-      case _PStatus.sent:
-        return Colors.indigo;
-      case _PStatus.partial:
-        return Colors.orange;
-      case _PStatus.received:
-        return Colors.teal;
-      case _PStatus.invoiced:
-        return Colors.purple;
-      case _PStatus.paid:
-        return Colors.green;
+      case PurchaseStatus.draft: return Colors.grey;
+      case PurchaseStatus.approved: return Colors.blue;
+      case PurchaseStatus.sent: return Colors.indigo;
+      case PurchaseStatus.partial: return Colors.orange;
+      case PurchaseStatus.received: return Colors.teal;
+      case PurchaseStatus.invoiced: return Colors.purple;
+      case PurchaseStatus.paid: return Colors.green;
     }
   }
 
-  IconData _statusIcon(_PStatus s) {
+  IconData _statusIcon(PurchaseStatus s) {
     switch (s) {
-      case _PStatus.draft:
-        return Icons.description_outlined;
-      case _PStatus.approved:
-        return Icons.verified_outlined;
-      case _PStatus.sent:
-        return Icons.outgoing_mail;
-      case _PStatus.partial:
-        return Icons.inventory_outlined;
-      case _PStatus.received:
-        return Icons.inventory_2_outlined;
-      case _PStatus.invoiced:
-        return Icons.receipt_long_outlined;
-      case _PStatus.paid:
-        return Icons.check_circle_outline;
+      case PurchaseStatus.draft: return Icons.description_outlined;
+      case PurchaseStatus.approved: return Icons.verified_outlined;
+      case PurchaseStatus.sent: return Icons.outgoing_mail;
+      case PurchaseStatus.partial: return Icons.inventory_outlined;
+      case PurchaseStatus.received: return Icons.inventory_2_outlined;
+      case PurchaseStatus.invoiced: return Icons.receipt_long_outlined;
+      case PurchaseStatus.paid: return Icons.check_circle_outline;
     }
   }
 
-  String _statusLabel(_PStatus s) {
+  String _statusLabel(PurchaseStatus s) {
     switch (s) {
-      case _PStatus.draft:
-        return 'Brouillon';
-      case _PStatus.approved:
-        return 'Validée';
-      case _PStatus.sent:
-        return 'Envoyée';
-      case _PStatus.partial:
-        return 'Réception partielle';
-      case _PStatus.received:
-        return 'Réceptionnée';
-      case _PStatus.invoiced:
-        return 'Facturée';
-      case _PStatus.paid:
-        return 'Payée';
+      case PurchaseStatus.draft: return 'Brouillon';
+      case PurchaseStatus.approved: return 'Validée';
+      case PurchaseStatus.sent: return 'Envoyée';
+      case PurchaseStatus.partial: return 'Réception partielle';
+      case PurchaseStatus.received: return 'Réceptionnée';
+      case PurchaseStatus.invoiced: return 'Facturée';
+      case PurchaseStatus.paid: return 'Payée';
     }
   }
 
-  String _statusShort(_PStatus s) {
+  String _statusShort(PurchaseStatus s) {
     switch (s) {
-      case _PStatus.draft:
-        return 'Brouillon';
-      case _PStatus.approved:
-        return 'Validée';
-      case _PStatus.sent:
-        return 'Envoyée';
-      case _PStatus.partial:
-        return 'Partielle';
-      case _PStatus.received:
-        return 'Reçue';
-      case _PStatus.invoiced:
-        return 'Facturée';
-      case _PStatus.paid:
-        return 'Payée';
+      case PurchaseStatus.draft: return 'Brouillon';
+      case PurchaseStatus.approved: return 'Validée';
+      case PurchaseStatus.sent: return 'Envoyée';
+      case PurchaseStatus.partial: return 'Partielle';
+      case PurchaseStatus.received: return 'Reçue';
+      case PurchaseStatus.invoiced: return 'Facturée';
+      case PurchaseStatus.paid: return 'Payée';
     }
   }
 
@@ -439,10 +380,9 @@ class _OrdersTabState extends State<_OrdersTab>
   bool get wantKeepAlive => true;
 }
 
-// ================== Onglet des Statistiques ==================================
+// ================== Onglet des Statistiques (inchangé) ==================================
 class _StatsTab extends StatelessWidget {
   const _StatsTab();
-
   @override
   Widget build(BuildContext context) {
     return const Center(
@@ -454,30 +394,31 @@ class _StatsTab extends StatelessWidget {
   }
 }
 
-// ==== Modèles & widgets internes =============================================
+// ==== Widgets internes (mis à jour ou nouveaux) ==================================
+
+// ➜ Nouvelle classe pour les statistiques calculées
+class _PStats {
+  final int openCount;
+  final double supplierDebt;
+  const _PStats({required this.openCount, required this.supplierDebt});
+}
 
 class _DateFilterChip extends StatelessWidget {
   final DateTime selectedDate;
   final VoidCallback onTap;
-
   const _DateFilterChip({required this.selectedDate, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final label = _isToday(selectedDate)
-        ? "Aujourd'hui"
-        : DateFormat('d MMM yyyy', 'fr_FR').format(selectedDate);
+    final isToday = _isToday(selectedDate);
+    final label = isToday ? "Aujourd'hui" : DateFormat('d MMM yyyy', 'fr_FR').format(selectedDate);
 
     return ActionChip(
       onPressed: onTap,
-      avatar: Icon(Icons.calendar_today_outlined,
-          size: 18, color: cs.primary),
+      avatar: Icon(Icons.calendar_today_outlined, size: 18, color: cs.primary),
       label: Text(label),
-      labelStyle: TextStyle(
-        color: cs.primary,
-        fontWeight: FontWeight.w600,
-      ),
+      labelStyle: TextStyle(color: cs.primary, fontWeight: FontWeight.w600),
       backgroundColor: cs.primaryContainer.withOpacity(0.2),
       side: BorderSide(color: cs.primary.withOpacity(0.4)),
     );
@@ -485,44 +426,8 @@ class _DateFilterChip extends StatelessWidget {
 
   bool _isToday(DateTime date) {
     final now = DateTime.now();
-    return date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day;
+    return date.year == now.year && date.month == now.month && date.day == now.day;
   }
-}
-
-enum _PStatus { draft, approved, sent, partial, received, invoiced, paid }
-
-class _Purchase {
-  final String id;
-  final String supplier;
-  final _PStatus status;
-  final DateTime createdAt;
-  final DateTime eta;
-  final double amount;
-  final String warehouse;
-
-  const _Purchase({
-    required this.id,
-    required this.supplier,
-    required this.status,
-    required this.createdAt,
-    required this.eta,
-    required this.amount,
-    required this.warehouse,
-  });
-}
-
-class _PStats {
-  final int count;
-  final int openCount;
-  final int lateCount;
-  final double openAmount;
-  const _PStats(
-      {required this.count,
-      required this.openCount,
-      required this.lateCount,
-      required this.openAmount});
 }
 
 class _KpiGrid extends StatelessWidget {
@@ -532,8 +437,8 @@ class _KpiGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GridView.count(
-      crossAxisCount: 2, // Forcé à 2 colonnes pour plus d'espace
-      childAspectRatio: 2.2, // Ajusté pour donner plus de hauteur
+      crossAxisCount: 2,
+      childAspectRatio: 2.2,
       mainAxisSpacing: 10,
       crossAxisSpacing: 10,
       shrinkWrap: true,
@@ -563,7 +468,7 @@ class _KpiCard extends StatelessWidget {
       child: Row(
         children: [
           CircleAvatar(
-            radius: 18, // Taille de l'icône réduite
+            radius: 18,
             backgroundColor: cs.primary.withOpacity(0.10),
             child: Icon(icon, size: 20),
           ),
@@ -576,7 +481,7 @@ class _KpiCard extends StatelessWidget {
                 Text(
                   label,
                   style: tt.labelMedium?.copyWith(color: cs.outline),
-                  maxLines: 1, // Assure que le label ne passe pas à la ligne
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 3),

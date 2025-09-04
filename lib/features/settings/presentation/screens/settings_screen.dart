@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 // ➜ CORRECTION: Le chemin pointe maintenant vers le nouvel emplacement.
-import '../../features/auth/presentation/screens/onboarding_screen.dart';
+import '../../../auth/presentation/screens/onboarding_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});

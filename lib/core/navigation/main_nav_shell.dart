@@ -3,7 +3,8 @@ import 'package:firstapp/src/screens/search_screen.dart';
 import 'package:firstapp/src/screens/home_shell.dart';
 import 'package:firstapp/src/screens/stock_screen.dart';
 import 'package:firstapp/src/screens/notifications_screen.dart';
-import 'package:firstapp/src/screens/purchases_list_screen.dart';
+// ➜ L'IMPORT A ÉTÉ MIS À JOUR ICI
+import 'package:firstapp/features/purchases/presentation/screens/purchases_list_screen.dart';
 
 class MainNavShell extends StatefulWidget {
   const MainNavShell({super.key});

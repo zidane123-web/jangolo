@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'create_purchase_screen.dart'; // <-- IMPORT AJOUTÉ
+// ➜ L'import pointe vers le nouvel emplacement
+import 'create_purchase_screen.dart';
 
 // Nouvel enum pour les filtres de statut simplifiés
 enum _FilterStatus { paid, unpaid, draft }

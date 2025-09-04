@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:firstapp/src/screens/settings_screen.dart';
+// ➜ CORRECTION: Le chemin pointe maintenant vers le nouvel emplacement.
+import '../../features/settings/presentation/screens/settings_screen.dart';
 import '../widgets/badge_bell.dart';
 import '../tabs/dashboard_tab.dart';
 

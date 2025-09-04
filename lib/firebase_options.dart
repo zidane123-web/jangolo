@@ -64,7 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '370850548318',
     projectId: 'jangolo-89938',
     storageBucket: 'jangolo-89938.firebasestorage.app',
-    iosBundleId: 'com.example.firstapp',
+    iosBundleId: 'com.example.jangolo',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -73,7 +73,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '370850548318',
     projectId: 'jangolo-89938',
     storageBucket: 'jangolo-89938.firebasestorage.app',
-    iosBundleId: 'com.example.firstapp',
+    iosBundleId: 'com.example.jangolo',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

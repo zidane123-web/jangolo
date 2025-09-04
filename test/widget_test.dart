@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:firstapp/main.dart'; // Assure-toi que le nom du package = nom du dossier (firstapp)
+import 'package:jangolo/main.dart'; // Assure-toi que le nom du package = nom du dossier (jangolo)
 
 void main() {
   testWidgets('Le compteur s’incrémente de 0 à 1', (WidgetTester tester) async {

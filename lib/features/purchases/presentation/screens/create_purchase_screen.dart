@@ -31,13 +31,13 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   final _step1FormKey = GlobalKey<FormState>();
   late final PageController _pageController;
   int _currentStep = 0;
-  
+
   // Données du formulaire
   String? _supplier;
   DateTime _orderDate = DateTime.now();
   String? _warehouse = 'Entrepôt Cotonou';
   ReceptionStatusChoice _receptionChoice = ReceptionStatusChoice.toReceive;
-  
+
   // Données "en dur" pour l'exemple
   final _suppliers = const [
     'TechDistrib SARL', 'Global Imports SA', 'Phone Accessoires Plus',
@@ -173,7 +173,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       },
     );
   }
-  
+
   void _showSupplierPicker() {
     _showStyledPicker(
       context: context,
@@ -208,10 +208,10 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   void _removeItem(int index) {
     setState(() => _items.removeAt(index));
   }
-  
+
   void _onNext() {
     FocusScope.of(context).unfocus();
-    
+
     if (_currentStep == 0) {
       if (_supplier == null || _warehouse == null) {
         _snack('Veuillez sélectionner un fournisseur et un entrepôt.', isError: true);
@@ -224,7 +224,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         return;
       }
     }
-    
+
     _pageController.nextPage(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
@@ -251,16 +251,20 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
           elevation: 0,
           scrolledUnderElevation: 0.5,
         ),
-        body: PageView(
-          controller: _pageController,
-          physics: const NeverScrollableScrollPhysics(),
-          onPageChanged: (page) => setState(() => _currentStep = page),
-          children: [
-            _buildStep1(),
-            _buildStep2(),
-            _buildStep3(),
-          ],
+        // ✅ --- CORRECTION APPLIQUÉE ICI ---
+        body: SafeArea(
+          child: PageView(
+            controller: _pageController,
+            physics: const NeverScrollableScrollPhysics(),
+            onPageChanged: (page) => setState(() => _currentStep = page),
+            children: [
+              _buildStep1(),
+              _buildStep2(),
+              _buildStep3(),
+            ],
+          ),
         ),
+        // --- FIN DE LA CORRECTION ---
       ),
     );
   }

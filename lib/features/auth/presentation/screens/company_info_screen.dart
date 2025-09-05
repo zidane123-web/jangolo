@@ -1,7 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-// ➜ CORRECTION du chemin d'importation
+// ➜ L'IMPORT VERS LE SHELL DE NAVIGATION EST AJOUTÉ ICI
+import '../../../../core/navigation/main_nav_shell.dart';
 import '../../../../shared/widgets/outlined_floating_field.dart';
 
 class CompanyInfoScreen extends StatefulWidget {
@@ -42,7 +43,17 @@ class _CompanyInfoScreenState extends State<CompanyInfoScreen> {
       );
 
       final user = userCredential.user;
-      if (user == null) return;
+      if (user == null) {
+        // Si l'utilisateur est null, on arrête et on gère l'erreur.
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('La création de l\'utilisateur a échoué.'), backgroundColor: Colors.redAccent),
+          );
+        }
+        setState(() => _submitting = false);
+        return;
+      }
+
 
       final batch = FirebaseFirestore.instance.batch();
 
@@ -56,7 +67,8 @@ class _CompanyInfoScreenState extends State<CompanyInfoScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      final userRef = FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid);
+      final userRef =
+          FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid);
       batch.set(userRef, {
         'firstName': widget.firstName,
         'lastName': widget.lastName,
@@ -67,6 +79,16 @@ class _CompanyInfoScreenState extends State<CompanyInfoScreen> {
       });
 
       await batch.commit();
+
+      // ✅ --- CORRECTION AJOUTÉE ICI ---
+      // Une fois que tout est sauvegardé, on navigue vers l'écran principal.
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const MainNavShell()),
+          (Route<dynamic> route) => false,
+        );
+      }
+      // --- FIN DE LA CORRECTION ---
 
     } on FirebaseAuthException catch (e) {
       String message = 'Une erreur est survenue. Réessayez.';
@@ -91,6 +113,8 @@ class _CompanyInfoScreenState extends State<CompanyInfoScreen> {
       }
     }
 
+    // On ne remet _submitting à false que si une erreur survient,
+    // car en cas de succès, l'écran est détruit par la navigation.
     if (mounted) {
       setState(() => _submitting = false);
     }
@@ -160,8 +184,8 @@ class _CompanyInfoScreenState extends State<CompanyInfoScreen> {
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFFFF7A59),
                         foregroundColor: Colors.white,
-                        // ➜ CORRECTION de la dépréciation
-                        disabledBackgroundColor: const Color(0xFFFF7A59).withAlpha(128),
+                        disabledBackgroundColor:
+                            const Color(0xFFFF7A59).withAlpha(128),
                         textStyle: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w700),
                         shape: RoundedRectangleBorder(

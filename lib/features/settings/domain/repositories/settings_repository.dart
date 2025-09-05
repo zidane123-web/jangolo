@@ -7,6 +7,10 @@ abstract class SettingsRepository {
   Future<List<Warehouse>> getWarehouses(String organizationId);
   Future<List<PaymentMethod>> getPaymentMethods(String organizationId);
 
-  // ✅ NOUVELLE MÉTHODE
   Future<Supplier> addSupplier({required String organizationId, required String name, String? phone});
+
+  // ✅ NOUVELLES MÉTHODES POUR LES ENTREPÔTS
+  Future<Warehouse> addWarehouse({required String organizationId, required String name, String? address});
+  Future<void> updateWarehouse({required String organizationId, required Warehouse warehouse});
+  Future<void> deleteWarehouse({required String organizationId, required String warehouseId});
 }

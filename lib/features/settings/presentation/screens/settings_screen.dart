@@ -1,6 +1,9 @@
+// lib/features/settings/presentation/screens/settings_screen.dart
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-// ➜ CORRECTION: Le chemin pointe maintenant vers le nouvel emplacement.
+// ✅ NOUVEL IMPORT
+import 'warehouses_list_screen.dart';
 import '../../../auth/presentation/screens/onboarding_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -44,6 +47,19 @@ class SettingsScreen extends StatelessWidget {
             leading: Icon(Icons.lock_outline),
             title: Text('Sécurité'),
             subtitle: Text('Changer le mot de passe'),
+          ),
+          const Divider(),
+
+          // ✅ NOUVELLE ENTRÉE POUR LES ENTREPÔTS
+          ListTile(
+            leading: const Icon(Icons.home_work_outlined),
+            title: const Text('Entrepôts'),
+            subtitle: const Text('Gérer vos lieux de stockage'),
+            onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const WarehousesListScreen(),
+              ));
+            },
           ),
           const Divider(),
           const ListTile(

@@ -7,9 +7,12 @@ abstract class SettingsRemoteDataSource {
   Future<List<SupplierModel>> getSuppliers(String organizationId);
   Future<List<WarehouseModel>> getWarehouses(String organizationId);
   Future<List<PaymentMethodModel>> getPaymentMethods(String organizationId);
-
-  // Nouvelle méthode pour ajouter un fournisseur à Firestore
   Future<SupplierModel> addSupplier(String organizationId, String name, String? phone);
+
+  // ✅ NOUVELLES MÉTHODES POUR LES ENTREPÔTS
+  Future<WarehouseModel> addWarehouse(String organizationId, String name, String? address);
+  Future<void> updateWarehouse(String organizationId, WarehouseModel warehouse);
+  Future<void> deleteWarehouse(String organizationId, String warehouseId);
 }
 
 class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
@@ -31,7 +34,6 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
           .get();
       return snapshot.docs.map(fromSnapshot).toList();
     } catch (e) {
-      // Dans une vraie app, on utiliserait un logger
       print('Error fetching $collectionName: $e');
       throw Exception('Could not load $collectionName');
     }
@@ -71,14 +73,81 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
           .collection('organisations')
           .doc(organizationId)
           .collection('suppliers')
-          .add({'name': name, 'contact': null, 'phone': phone}); // On ajoute le document avec le téléphone
+          .add({'name': name, 'contact': null, 'phone': phone});
 
-      // On récupère le document fraîchement créé pour avoir son ID
       final doc = await docRef.get();
       return SupplierModel.fromSnapshot(doc);
     } catch (e) {
       print('Error adding supplier: $e');
       throw Exception('Could not add supplier');
+    }
+  }
+  
+  // ✅ IMPLÉMENTATION DES NOUVELLES MÉTHODES
+  @override
+  Future<WarehouseModel> addWarehouse(String organizationId, String name, String? address) async {
+    try {
+      final docRef = await firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('warehouses')
+          .add({'name': name, 'address': address});
+
+      final doc = await docRef.get();
+      return WarehouseModel.fromSnapshot(doc);
+    } catch (e) {
+      print('Error adding warehouse: $e');
+      throw Exception('Could not add warehouse');
+    }
+  }
+
+  @override
+  Future<void> updateWarehouse(String organizationId, WarehouseModel warehouse) async {
+    try {
+      final batch = firestore.batch();
+      
+      // 1. Mettre à jour le document principal de l'entrepôt
+      final warehouseRef = firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('warehouses')
+          .doc(warehouse.id);
+      batch.update(warehouseRef, warehouse.toJson());
+
+      // 2. Mettre à jour les données dénormalisées dans les achats
+      final purchasesSnapshot = await firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('purchases')
+          .where('warehouse.id', isEqualTo: warehouse.id)
+          .get();
+      
+      for (final doc in purchasesSnapshot.docs) {
+        batch.update(doc.reference, {'warehouse': warehouse.toJson()});
+      }
+
+      await batch.commit();
+
+    } catch (e) {
+      print('Error updating warehouse: $e');
+      throw Exception('Could not update warehouse');
+    }
+  }
+
+  @override
+  Future<void> deleteWarehouse(String organizationId, String warehouseId) async {
+    try {
+      // Pour la sécurité, on pourrait vérifier si l'entrepôt est utilisé
+      // avant de le supprimer, mais pour l'instant on fait une suppression simple.
+      await firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('warehouses')
+          .doc(warehouseId)
+          .delete();
+    } catch (e) {
+      print('Error deleting warehouse: $e');
+      throw Exception('Could not delete warehouse');
     }
   }
 }

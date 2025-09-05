@@ -13,7 +13,10 @@ import '../../domain/usecases/create_purchase.dart';
 import '../../../settings/data/datasources/settings_remote_datasource.dart';
 import '../../../settings/data/repositories/settings_repository_impl.dart';
 import '../../../settings/domain/entities/management_entities.dart';
+import '../../../settings/domain/usecases/add_supplier.dart';
+import '../../../settings/domain/usecases/add_warehouse.dart';
 import '../../../settings/domain/usecases/get_management_data.dart';
+import '../../../settings/presentation/screens/add_edit_warehouse_screen.dart';
 import '../../../settings/presentation/screens/add_supplier_screen.dart';
 
 
@@ -68,6 +71,9 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   late final GetSuppliers _getSuppliers;
   late final GetWarehouses _getWarehouses;
   late final GetPaymentMethods _getPaymentMethods;
+  // ✅ NOUVEAU: Ajout des UseCases pour la création
+  late final AddSupplier _addSupplier;
+  late final AddWarehouse _addWarehouse;
 
   @override
   void initState() {
@@ -84,6 +90,10 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     _getSuppliers = GetSuppliers(settingsRepository);
     _getWarehouses = GetWarehouses(settingsRepository);
     _getPaymentMethods = GetPaymentMethods(settingsRepository);
+    // ✅ NOUVEAU: Initialisation des UseCases
+    _addSupplier = AddSupplier(settingsRepository);
+    _addWarehouse = AddWarehouse(settingsRepository);
+
 
     // --- Lancement du chargement des données ---
     _loadInitialData();
@@ -107,7 +117,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       if (mounted) {
         setState(() {
           _suppliers = results[0] as List<Supplier>;
-          _warehouses = results[1] as List<Warehouse>;
+          _warehouses = results[1] as List<Warehouse>; // ✅ C'est déjà le bon type ici
           _paymentMethods = results[2] as List<PaymentMethod>;
 
           if (_warehouses.isNotEmpty) {
@@ -242,7 +252,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
                   value: selectedMethod,
                   decoration: const InputDecoration(
                     labelText: 'Moyen de paiement',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                   items: _paymentMethods.map((method) => DropdownMenuItem(value: method, child: Text(method.name))).toList(),
                   onChanged: (v) => selectedMethod = v,
@@ -307,6 +317,43 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         setState(() => _warehouse = _warehouses.firstWhere((w) => w.name == selectedName));
         Navigator.pop(context);
       },
+      actionButton: TextButton(
+        onPressed: () async {
+          Navigator.pop(context);
+          final newWarehouseResult = await Navigator.of(context).push<Warehouse>(
+            MaterialPageRoute(builder: (_) => const AddEditWarehouseScreen()),
+          );
+
+          if (newWarehouseResult != null) {
+            final user = FirebaseAuth.instance.currentUser;
+            if (user == null) {
+              _snack("Utilisateur non authentifié.", isError: true);
+              return;
+            }
+            final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
+            final organizationId = userDoc.data()?['organizationId'] as String?;
+            if (organizationId == null) {
+              _snack("Organisation non trouvée.", isError: true);
+              return;
+            }
+
+            try {
+              final savedWarehouse = await _addWarehouse(
+                organizationId: organizationId,
+                name: newWarehouseResult.name,
+                address: newWarehouseResult.address,
+              );
+              setState(() {
+                _warehouses.add(savedWarehouse);
+                _warehouse = savedWarehouse;
+              });
+            } catch (e) {
+              _snack("Erreur de sauvegarde de l'entrepôt: $e", isError: true);
+            }
+          }
+        },
+        child: const Text('Créer'),
+      ),
     );
   }
   
@@ -323,15 +370,35 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       actionButton: TextButton(
         onPressed: () async {
           Navigator.pop(context); 
-          final newSupplier = await Navigator.of(context).push<Supplier>(
+          final newSupplierResult = await Navigator.of(context).push<Supplier>(
             MaterialPageRoute(builder: (_) => const AddSupplierScreen()),
           );
           
-          if (newSupplier != null) {
-            setState(() {
-              _suppliers.add(newSupplier);
-              _supplier = newSupplier;
-            });
+          if (newSupplierResult != null) {
+            final user = FirebaseAuth.instance.currentUser;
+            if (user == null) {
+              _snack("Utilisateur non authentifié.", isError: true);
+              return;
+            }
+            final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
+            final organizationId = userDoc.data()?['organizationId'] as String?;
+            if (organizationId == null) {
+              _snack("Organisation non trouvée.", isError: true);
+              return;
+            }
+            try {
+              final savedSupplier = await _addSupplier(
+                organizationId: organizationId,
+                name: newSupplierResult.name,
+                phone: newSupplierResult.phone,
+              );
+              setState(() {
+                _suppliers.add(savedSupplier);
+                _supplier = savedSupplier;
+              });
+            } catch (e) {
+              _snack("Erreur de sauvegarde du fournisseur: $e", isError: true);
+            }
           }
         },
         child: const Text('Créer'),
@@ -599,8 +666,6 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   }
 }
 
-// ✅ --- MODIFICATION ---
-// Remplacement du FAB par un `actionButton` de type Widget
 void _showStyledPicker({
   required BuildContext context,
   required String title,
@@ -635,8 +700,6 @@ void _showStyledPicker({
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // ✅ --- MODIFICATION ---
-                  // Le titre et le bouton d'action sont dans une Row
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [

@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 // --- IMPORTS POUR L'ARCHITECTURE ---
 import '../../data/datasources/remote_datasource.dart';
 import '../../data/repositories/purchase_repository_impl.dart';
+import '../../domain/entities/payment_entity.dart';
 import '../../domain/entities/purchase_entity.dart';
 import '../../domain/entities/purchase_line_entity.dart';
 import '../../domain/usecases/create_purchase.dart';
@@ -17,6 +18,9 @@ import 'purchase_line_edit_screen.dart';
 import '../widgets/create_purchase/supplier_info_form.dart';
 import '../widgets/create_purchase/line_items_section.dart';
 import '../widgets/create_purchase/purchase_summary_card.dart';
+// ✅ --- NOUVEL IMPORT ---
+import '../widgets/create_purchase/payment_and_reception_step.dart';
+
 
 enum ReceptionStatusChoice { toReceive, alreadyReceived }
 
@@ -30,13 +34,25 @@ class CreatePurchaseScreen extends StatefulWidget {
 class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   final _step1FormKey = GlobalKey<FormState>();
   late final PageController _pageController;
+  // ✅ Passe à 4 étapes
   int _currentStep = 0;
   
+  // --- ETAT ETAPE 1 ---
   String? _supplier;
   DateTime _orderDate = DateTime.now();
   String? _warehouse = 'Entrepôt Cotonou';
-  ReceptionStatusChoice _receptionChoice = ReceptionStatusChoice.toReceive;
   
+  // --- ETAT ETAPE 2 ---
+  final List<LineItem> _items = [];
+  
+  // ✅ --- NOUVEL ETAT POUR L'ETAPE 3 ---
+  ReceptionStatusChoice _receptionChoice = ReceptionStatusChoice.toReceive;
+  PaymentStatusChoice _paymentChoice = PaymentStatusChoice.notPaid;
+  final _partialAmountController = TextEditingController();
+  String? _paymentMethod;
+  final _paymentMethods = const ['Caisse', 'Banque', 'Mobile Money'];
+  // --- FIN NOUVEL ETAT ---
+
   final _suppliers = const [
     'TechDistrib SARL', 'Global Imports SA', 'Phone Accessoires Plus',
     'Innovations Mobiles', 'Électro Fourniture Express'
@@ -46,7 +62,6 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   ];
 
   final String _currency = 'F';
-  final List<LineItem> _items = [];
   bool _isSaving = false;
 
   late final CreatePurchase _createPurchase;
@@ -64,12 +79,14 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _partialAmountController.dispose();
     super.dispose();
   }
 
   Future<void> _save({required bool approve}) async {
-    if (_items.isEmpty && approve) {
-      _snack('Ajoutez au moins une ligne d’article.', isError: true);
+    // La validation se fait maintenant à l'étape 3
+    if (_paymentChoice != PaymentStatusChoice.notPaid && _paymentMethod == null) {
+      _snack('Veuillez sélectionner un compte de paiement.', isError: true);
       return;
     }
 
@@ -78,20 +95,43 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception("Utilisateur non connecté.");
-      final userDoc = await FirebaseFirestore.instance
-          .collection('utilisateurs')
-          .doc(user.uid)
-          .get();
+      final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
       final organizationId = userDoc.data()?['organizationId'] as String?;
       if (organizationId == null) throw Exception("Organisation non trouvée.");
 
+      final grandTotal = _items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble());
+      final List<PaymentEntity> payments = [];
+      
+      if (_paymentChoice != PaymentStatusChoice.notPaid) {
+        double amountPaid = 0;
+        if (_paymentChoice == PaymentStatusChoice.fullyPaid) {
+          amountPaid = grandTotal;
+        } else { // partiallyPaid
+          amountPaid = double.tryParse(_partialAmountController.text) ?? 0.0;
+        }
+
+        if (amountPaid > 0) {
+           payments.add(PaymentEntity(
+            id: UniqueKey().toString(),
+            amount: amountPaid,
+            date: DateTime.now(),
+            paymentMethod: _paymentMethod!,
+            treasuryAccountId: _paymentMethod!, // Simplification pour l'exemple
+          ));
+        }
+      }
+
+      final bool isFullyPaid = (grandTotal - payments.fold(0.0, (sum, p) => sum + p.amount)) < 0.01;
       PurchaseStatus status;
+
       if (!approve) {
         status = PurchaseStatus.draft;
+      } else if (_receptionChoice == ReceptionStatusChoice.alreadyReceived && isFullyPaid) {
+        status = PurchaseStatus.paid;
+      } else if (_receptionChoice == ReceptionStatusChoice.alreadyReceived) {
+        status = PurchaseStatus.received;
       } else {
-        status = _receptionChoice == ReceptionStatusChoice.alreadyReceived
-            ? PurchaseStatus.received
-            : PurchaseStatus.approved;
+        status = PurchaseStatus.approved;
       }
 
       final newPurchase = PurchaseEntity(
@@ -101,15 +141,13 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         createdAt: _orderDate,
         eta: _orderDate.add(const Duration(days: 7)),
         warehouse: _warehouse!,
+        payments: payments,
         items: _items.map((item) {
-          final domainDiscountType =
-              DiscountType.values.byName(item.discountType.name);
-          // ✅ --- CORRECTION APPLIQUÉE ICI ---
+          final domainDiscountType = DiscountType.values.byName(item.discountType.name);
           return PurchaseLineEntity(
             id: UniqueKey().toString(),
             name: item.name,
             sku: item.sku,
-            // Correction du nom du paramètre
             scannedCodeGroups: item.scannedCodeGroups, 
             unitPrice: item.unitPrice,
             discountType: domainDiscountType,
@@ -119,8 +157,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         }).toList(),
       );
 
-      await _createPurchase(
-          organizationId: organizationId, purchase: newPurchase);
+      await _createPurchase(organizationId: organizationId, purchase: newPurchase);
 
       _snack(approve ? 'Bon d’achat validé !' : 'Brouillon enregistré.');
       if (mounted) Navigator.of(context).pop();
@@ -130,7 +167,8 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       if (mounted) setState(() => _isSaving = false);
     }
   }
-
+  
+  // --- Les autres méthodes (snack, pickers, etc.) restent inchangées ---
   void _snack(String message, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -145,20 +183,21 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       initialDate: _orderDate,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            datePickerTheme: DatePickerThemeData(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
     if (picked != null) setState(() => _orderDate = picked);
+  }
+  
+  void _showPaymentMethodPicker() {
+    _showStyledPicker(
+      context: context,
+      title: 'Sélectionner un compte',
+      items: _paymentMethods,
+      icon: Icons.account_balance_wallet_outlined,
+      onSelected: (selected) {
+        setState(() => _paymentMethod = selected);
+        Navigator.pop(context);
+      },
+    );
   }
 
   void _showWarehousePicker() {
@@ -224,7 +263,6 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         return;
       }
     }
-    
     _pageController.nextPage(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
@@ -246,7 +284,8 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
-          title: Text('Nouvel Achat (${_currentStep + 1}/3)'),
+          // ✅ Titre mis à jour pour 4 étapes
+          title: Text('Nouvel Achat (${_currentStep + 1}/4)'),
           backgroundColor: Colors.white,
           elevation: 0,
           scrolledUnderElevation: 0.5,
@@ -259,7 +298,10 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
             children: [
               _buildStep1(),
               _buildStep2(),
+              // ✅ AJOUT de la nouvelle étape 3
               _buildStep3(),
+              // ✅ Le résumé devient l'étape 4
+              _buildStep4(),
             ],
           ),
         ),
@@ -274,6 +316,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         children: [
           Form(
             key: _step1FormKey,
+            // ✅ Le formulaire n'a plus besoin des paramètres de réception
             child: SupplierInfoForm(
               supplier: _supplier,
               onSupplierTap: _showSupplierPicker,
@@ -281,10 +324,6 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
               onWarehouseTap: _showWarehousePicker,
               orderDate: DateFormat('dd/MM/yyyy', 'fr_FR').format(_orderDate),
               onOrderDateTap: _pickOrderDate,
-              receptionStatus: _receptionChoice,
-              onReceptionStatusChanged: (choice) {
-                setState(() => _receptionChoice = choice);
-              },
             ),
           ),
           const SizedBox(height: 24),
@@ -319,12 +358,12 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16.0),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 OutlinedButton(
                   onPressed: _onBack,
                   child: const Text('Retour'),
                 ),
+                const Spacer(),
                 FilledButton(
                   onPressed: _onNext,
                   child: const Text('Suivant'),
@@ -337,7 +376,45 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     );
   }
 
+  // ✅ --- NOUVELLE METHODE POUR L'ETAPE 3 ---
   Widget _buildStep3() {
+    return Column(
+      children: [
+        Expanded(
+          child: PaymentAndReceptionStep(
+            paymentStatus: _paymentChoice,
+            onPaymentStatusChanged: (choice) => setState(() => _paymentChoice = choice),
+            partialAmountController: _partialAmountController,
+            paymentMethod: _paymentMethod,
+            onPaymentMethodTap: _showPaymentMethodPicker,
+            receptionStatus: _receptionChoice,
+            onReceptionStatusChanged: (choice) => setState(() => _receptionChoice = choice),
+            currency: _currency,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              OutlinedButton(
+                onPressed: _onBack,
+                child: const Text('Retour'),
+              ),
+              const Spacer(),
+              FilledButton(
+                onPressed: _onNext,
+                child: const Text('Suivant'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+
+  // ✅ L'ancien `_buildStep3` devient `_buildStep4`
+  Widget _buildStep4() {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
       child: Column(
@@ -375,7 +452,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
           SizedBox(
             width: double.infinity,
             child: TextButton(
-              onPressed: () => _save(approve: false),
+              onPressed: _isSaving ? null : () => _save(approve: false),
               child: const Text('Enregistrer comme brouillon'),
             ),
           ),
@@ -385,6 +462,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   }
 }
 
+// La méthode _showStyledPicker reste inchangée
 void _showStyledPicker({
   required BuildContext context,
   required String title,

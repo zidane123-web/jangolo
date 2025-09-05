@@ -3,18 +3,16 @@
 import 'package:flutter/material.dart';
 
 import 'form_widgets.dart';
-import '../../../presentation/screens/create_purchase_screen.dart';
 
 class SupplierInfoForm extends StatelessWidget {
-  final String? supplier; // Changé de TextEditingController à String?
-  final VoidCallback onSupplierTap; // Nouvelle callback pour le clic
+  final String? supplier;
+  final VoidCallback onSupplierTap;
   final String? warehouse;
   final VoidCallback onWarehouseTap;
   final String orderDate;
   final VoidCallback onOrderDateTap;
-  final ReceptionStatusChoice receptionStatus;
-  final ValueChanged<ReceptionStatusChoice> onReceptionStatusChanged;
 
+  // ✅ MODIFICATION: Les champs liés au statut de réception sont supprimés.
   const SupplierInfoForm({
     super.key,
     required this.supplier,
@@ -23,8 +21,6 @@ class SupplierInfoForm extends StatelessWidget {
     required this.onWarehouseTap,
     required this.orderDate,
     required this.onOrderDateTap,
-    required this.receptionStatus,
-    required this.onReceptionStatusChanged,
   });
 
   static const _vGap = 16.0;
@@ -63,63 +59,11 @@ class SupplierInfoForm extends StatelessWidget {
           prefixIcon: Icons.event_outlined,
           trailing: const Icon(Icons.calendar_today_outlined, size: 20),
         ),
-        const SizedBox(height: _vGap + 4),
-
-        // Sélecteur de statut de réception
-        StatusToggleButtons(
-          selected: receptionStatus,
-          onChanged: onReceptionStatusChanged,
-        ),
+        // ✅ MODIFICATION: Le sélecteur de statut de réception a été retiré d'ici.
       ],
     );
   }
 }
 
-class StatusToggleButtons extends StatelessWidget {
-  final ReceptionStatusChoice selected;
-  final ValueChanged<ReceptionStatusChoice> onChanged;
-
-  const StatusToggleButtons({
-    super.key,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Statut de la Réception',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: 8),
-        SegmentedButton<ReceptionStatusChoice>(
-          segments: const [
-            ButtonSegment(
-              value: ReceptionStatusChoice.toReceive,
-              label: Text('À recevoir'),
-              icon: Icon(Icons.local_shipping_outlined),
-            ),
-            ButtonSegment(
-              value: ReceptionStatusChoice.alreadyReceived,
-              label: Text('Déjà Reçu'),
-              icon: Icon(Icons.inventory_2_outlined),
-            ),
-          ],
-          selected: {selected},
-          onSelectionChanged: (selection) {
-            onChanged(selection.first);
-          },
-          style: SegmentedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            textStyle: theme.textTheme.labelLarge,
-          ),
-        ),
-      ],
-    );
-  }
-}
+// ✅ MODIFICATION: Le widget StatusToggleButtons n'est plus nécessaire dans ce fichier.
+// Il sera recréé dans notre nouvelle étape.

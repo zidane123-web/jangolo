@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-// --- IMPORTS POUR L'ARCHITECTURE ---
+// --- IMPORTS ---
 import '../../data/datasources/remote_datasource.dart';
 import '../../data/repositories/purchase_repository_impl.dart';
 import '../../domain/entities/payment_entity.dart';
@@ -13,12 +13,11 @@ import '../../domain/entities/purchase_entity.dart';
 import '../../domain/entities/purchase_line_entity.dart';
 import '../../domain/usecases/create_purchase.dart';
 
-// --- IMPORTS POUR L'UI ---
 import 'purchase_line_edit_screen.dart';
+import '../models/payment_view_model.dart';
 import '../widgets/create_purchase/supplier_info_form.dart';
 import '../widgets/create_purchase/line_items_section.dart';
 import '../widgets/create_purchase/purchase_summary_card.dart';
-// ✅ --- NOUVEL IMPORT ---
 import '../widgets/create_purchase/payment_and_reception_step.dart';
 
 
@@ -34,7 +33,6 @@ class CreatePurchaseScreen extends StatefulWidget {
 class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   final _step1FormKey = GlobalKey<FormState>();
   late final PageController _pageController;
-  // ✅ Passe à 4 étapes
   int _currentStep = 0;
   
   // --- ETAT ETAPE 1 ---
@@ -45,33 +43,25 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   // --- ETAT ETAPE 2 ---
   final List<LineItem> _items = [];
   
-  // ✅ --- NOUVEL ETAT POUR L'ETAPE 3 ---
+  // ✅ --- CORRECTION: Les anciens états de paiement sont supprimés ---
   ReceptionStatusChoice _receptionChoice = ReceptionStatusChoice.toReceive;
-  PaymentStatusChoice _paymentChoice = PaymentStatusChoice.notPaid;
-  final _partialAmountController = TextEditingController();
-  String? _paymentMethod;
+  final List<PaymentViewModel> _payments = [];
   final _paymentMethods = const ['Caisse', 'Banque', 'Mobile Money'];
-  // --- FIN NOUVEL ETAT ---
 
   final _suppliers = const [
     'TechDistrib SARL', 'Global Imports SA', 'Phone Accessoires Plus',
     'Innovations Mobiles', 'Électro Fourniture Express'
   ];
-  final _warehouses = const [
-    'Entrepôt Cotonou', 'Magasin Porto-Novo', 'Dépôt Parakou'
-  ];
-
+  final _warehouses = const ['Entrepôt Cotonou', 'Magasin Porto-Novo', 'Dépôt Parakou'];
   final String _currency = 'F';
   bool _isSaving = false;
-
   late final CreatePurchase _createPurchase;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
-    final remoteDataSource =
-        PurchaseRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
+    final remoteDataSource = PurchaseRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
     final repository = PurchaseRepositoryImpl(remoteDataSource: remoteDataSource);
     _createPurchase = CreatePurchase(repository);
   }
@@ -79,17 +69,12 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   @override
   void dispose() {
     _pageController.dispose();
-    _partialAmountController.dispose();
     super.dispose();
   }
+  
+  bool get _isFormDirty => _supplier != null || _items.isNotEmpty;
 
   Future<void> _save({required bool approve}) async {
-    // La validation se fait maintenant à l'étape 3
-    if (_paymentChoice != PaymentStatusChoice.notPaid && _paymentMethod == null) {
-      _snack('Veuillez sélectionner un compte de paiement.', isError: true);
-      return;
-    }
-
     setState(() => _isSaving = true);
 
     try {
@@ -100,28 +85,17 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       if (organizationId == null) throw Exception("Organisation non trouvée.");
 
       final grandTotal = _items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble());
-      final List<PaymentEntity> payments = [];
+      final totalPaid = _payments.fold(0.0, (total, p) => total + p.amount);
       
-      if (_paymentChoice != PaymentStatusChoice.notPaid) {
-        double amountPaid = 0;
-        if (_paymentChoice == PaymentStatusChoice.fullyPaid) {
-          amountPaid = grandTotal;
-        } else { // partiallyPaid
-          amountPaid = double.tryParse(_partialAmountController.text) ?? 0.0;
-        }
+      final List<PaymentEntity> paymentEntities = _payments.map((p) => PaymentEntity(
+        id: UniqueKey().toString(),
+        amount: p.amount,
+        date: DateTime.now(),
+        paymentMethod: p.method,
+        treasuryAccountId: p.method,
+      )).toList();
 
-        if (amountPaid > 0) {
-           payments.add(PaymentEntity(
-            id: UniqueKey().toString(),
-            amount: amountPaid,
-            date: DateTime.now(),
-            paymentMethod: _paymentMethod!,
-            treasuryAccountId: _paymentMethod!, // Simplification pour l'exemple
-          ));
-        }
-      }
-
-      final bool isFullyPaid = (grandTotal - payments.fold(0.0, (sum, p) => sum + p.amount)) < 0.01;
+      final bool isFullyPaid = (grandTotal > 0) && (grandTotal - totalPaid).abs() < 0.01;
       PurchaseStatus status;
 
       if (!approve) {
@@ -141,16 +115,15 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         createdAt: _orderDate,
         eta: _orderDate.add(const Duration(days: 7)),
         warehouse: _warehouse!,
-        payments: payments,
+        payments: paymentEntities,
         items: _items.map((item) {
-          final domainDiscountType = DiscountType.values.byName(item.discountType.name);
           return PurchaseLineEntity(
             id: UniqueKey().toString(),
             name: item.name,
             sku: item.sku,
             scannedCodeGroups: item.scannedCodeGroups, 
             unitPrice: item.unitPrice,
-            discountType: domainDiscountType,
+            discountType: DiscountType.values.byName(item.discountType.name),
             discountValue: item.discountValue,
             vatRate: item.vatRate,
           );
@@ -168,7 +141,76 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     }
   }
   
-  // --- Les autres méthodes (snack, pickers, etc.) restent inchangées ---
+  Future<void> _showAddPaymentDialog() async {
+    final amountController = TextEditingController();
+    String? selectedMethod = _paymentMethods.first;
+    final formKey = GlobalKey<FormState>();
+
+    final result = await showDialog<PaymentViewModel>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Ajouter un paiement'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: amountController,
+                  decoration: InputDecoration(
+                    labelText: 'Montant',
+                    suffixText: _currency,
+                    border: const OutlineInputBorder(),
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Requis';
+                    if ((double.tryParse(v) ?? 0) <= 0) return 'Montant invalide';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedMethod,
+                  decoration: const InputDecoration(
+                    labelText: 'Moyen de paiement',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _paymentMethods.map((method) => DropdownMenuItem(value: method, child: Text(method))).toList(),
+                  onChanged: (v) => selectedMethod = v,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(context, PaymentViewModel(
+                    amount: double.parse(amountController.text),
+                    method: selectedMethod!,
+                  ));
+                }
+              },
+              child: const Text('Ajouter'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null) {
+      setState(() {
+        _payments.add(result);
+      });
+    }
+  }
+
   void _snack(String message, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -186,19 +228,6 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     );
     if (picked != null) setState(() => _orderDate = picked);
   }
-  
-  void _showPaymentMethodPicker() {
-    _showStyledPicker(
-      context: context,
-      title: 'Sélectionner un compte',
-      items: _paymentMethods,
-      icon: Icons.account_balance_wallet_outlined,
-      onSelected: (selected) {
-        setState(() => _paymentMethod = selected);
-        Navigator.pop(context);
-      },
-    );
-  }
 
   void _showWarehousePicker() {
     _showStyledPicker(
@@ -207,7 +236,9 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       items: _warehouses,
       icon: Icons.home_work_outlined,
       onSelected: (selected) {
-        setState(() => _warehouse = selected);
+        setState(() {
+          _warehouse = selected;
+        });
         Navigator.pop(context);
       },
     );
@@ -220,7 +251,9 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       items: _suppliers,
       icon: Icons.store_mall_directory_outlined,
       onSelected: (selected) {
-        setState(() => _supplier = selected);
+        setState(() {
+          _supplier = selected;
+        });
         Navigator.pop(context);
       },
     );
@@ -250,59 +283,96 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   
   void _onNext() {
     FocusScope.of(context).unfocus();
+
+    if (_currentStep == 0 && (_supplier == null || _warehouse == null)) {
+      _snack('Veuillez sélectionner un fournisseur et un entrepôt.', isError: true);
+      return;
+    }
+
+    if (_currentStep == 1 && _items.isEmpty) {
+      _snack('Veuillez ajouter au moins un article.', isError: true);
+      return;
+    }
+
+    if (_currentStep == 2 && _payments.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Confirmation requise"),
+          content: const Text("Aucun paiement n'a été enregistré. Voulez-vous marquer cet achat comme 'Non Payé' et continuer ?"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Non, rester'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
+              },
+              child: const Text('Oui, continuer'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     
-    if (_currentStep == 0) {
-      if (_supplier == null || _warehouse == null) {
-        _snack('Veuillez sélectionner un fournisseur et un entrepôt.', isError: true);
-        return;
-      }
-    }
-    if (_currentStep == 1) {
-      if (_items.isEmpty) {
-        _snack('Veuillez ajouter au moins un article.', isError: true);
-        return;
-      }
-    }
-    _pageController.nextPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-    );
+    _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
   }
 
   void _onBack() {
     FocusScope.of(context).unfocus();
-    _pageController.previousPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-    );
+    _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          // ✅ Titre mis à jour pour 4 étapes
-          title: Text('Nouvel Achat (${_currentStep + 1}/4)'),
-          backgroundColor: Colors.white,
-          elevation: 0,
-          scrolledUnderElevation: 0.5,
-        ),
-        body: SafeArea(
-          child: PageView(
-            controller: _pageController,
-            physics: const NeverScrollableScrollPhysics(),
-            onPageChanged: (page) => setState(() => _currentStep = page),
-            children: [
-              _buildStep1(),
-              _buildStep2(),
-              // ✅ AJOUT de la nouvelle étape 3
-              _buildStep3(),
-              // ✅ Le résumé devient l'étape 4
-              _buildStep4(),
+    return PopScope(
+      canPop: !_isFormDirty,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        
+        final bool shouldPop = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Abandonner l\'achat ?'),
+            content: const Text('Toutes les données saisies seront perdues.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Rester'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+                child: const Text('Abandonner'),
+              ),
             ],
+          ),
+        ) ?? false;
+
+        if (shouldPop && mounted) {
+          Navigator.pop(context);
+        }
+      },
+      child: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: Text('Nouvel Achat (${_currentStep + 1}/4)'),
+            backgroundColor: Colors.white,
+            elevation: 0,
+            scrolledUnderElevation: 0.5,
+          ),
+          body: SafeArea(
+            child: PageView(
+              controller: _pageController,
+              physics: const NeverScrollableScrollPhysics(),
+              onPageChanged: (page) => setState(() => _currentStep = page),
+              children: [_buildStep1(), _buildStep2(), _buildStep3(), _buildStep4()],
+            ),
           ),
         ),
       ),
@@ -316,7 +386,6 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         children: [
           Form(
             key: _step1FormKey,
-            // ✅ Le formulaire n'a plus besoin des paramètres de réception
             child: SupplierInfoForm(
               supplier: _supplier,
               onSupplierTap: _showSupplierPicker,
@@ -359,15 +428,9 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
             padding: const EdgeInsets.symmetric(vertical: 16.0),
             child: Row(
               children: [
-                OutlinedButton(
-                  onPressed: _onBack,
-                  child: const Text('Retour'),
-                ),
+                OutlinedButton(onPressed: _onBack, child: const Text('Retour')),
                 const Spacer(),
-                FilledButton(
-                  onPressed: _onNext,
-                  child: const Text('Suivant'),
-                ),
+                FilledButton(onPressed: _onNext, child: const Text('Suivant')),
               ],
             ),
           ),
@@ -376,35 +439,28 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     );
   }
 
-  // ✅ --- NOUVELLE METHODE POUR L'ETAPE 3 ---
   Widget _buildStep3() {
+    final grandTotal = _items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble());
     return Column(
       children: [
         Expanded(
           child: PaymentAndReceptionStep(
-            paymentStatus: _paymentChoice,
-            onPaymentStatusChanged: (choice) => setState(() => _paymentChoice = choice),
-            partialAmountController: _partialAmountController,
-            paymentMethod: _paymentMethod,
-            onPaymentMethodTap: _showPaymentMethodPicker,
+            grandTotal: grandTotal,
+            currency: _currency,
+            payments: _payments,
+            onAddPayment: _showAddPaymentDialog,
+            onRemovePayment: (index) => setState(() => _payments.removeAt(index)),
             receptionStatus: _receptionChoice,
             onReceptionStatusChanged: (choice) => setState(() => _receptionChoice = choice),
-            currency: _currency,
           ),
         ),
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
             children: [
-              OutlinedButton(
-                onPressed: _onBack,
-                child: const Text('Retour'),
-              ),
+              OutlinedButton(onPressed: _onBack, child: const Text('Retour')),
               const Spacer(),
-              FilledButton(
-                onPressed: _onNext,
-                child: const Text('Suivant'),
-              ),
+              FilledButton(onPressed: _onNext, child: const Text('Suivant')),
             ],
           ),
         ),
@@ -412,16 +468,13 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     );
   }
 
-
-  // ✅ L'ancien `_buildStep3` devient `_buildStep4`
   Widget _buildStep4() {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
       child: Column(
         children: [
           PurchaseSummaryCard(
-            grandTotal: _items.fold<double>(
-                0.0, (total, item) => total + item.lineTotal.toDouble()),
+            grandTotal: _items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble()),
             currency: _currency,
           ),
           const SizedBox(height: 32),
@@ -431,10 +484,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(
-                    onPressed: _onBack,
-                    child: const Text('Retour'),
-                  ),
+                  child: OutlinedButton(onPressed: _onBack, child: const Text('Retour')),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -462,7 +512,6 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   }
 }
 
-// La méthode _showStyledPicker reste inchangée
 void _showStyledPicker({
   required BuildContext context,
   required String title,

@@ -1,3 +1,5 @@
+// lib/features/inventory/presentation/screens/stock_screen.dart
+
 import 'package:flutter/material.dart';
 import '../../data/models/article.dart';
 import 'article_detail_screen.dart';
@@ -14,9 +16,9 @@ class _StockScreenState extends State<StockScreen>
     with AutomaticKeepAliveClientMixin {
   // -----------------------
   // Données fictives
+  // ✅ MODIFICATION: Utilise le modèle Article public
   // -----------------------
   final List<Article> _all = const [
-    // ➜ CORRECTION: "cat:" a été remplacé par "category:" partout.
     // Téléphones
     Article(category: ArticleCategory.phones, name: 'iPhone 14 128 Go', sku: 'IP14-128-BLK', buyPrice: 650, sellPrice: 899, qty: 12),
     Article(category: ArticleCategory.phones, name: 'Samsung Galaxy S23', sku: 'SGS23-128', buyPrice: 540, sellPrice: 799, qty: 9),
@@ -419,7 +421,6 @@ class _KpiRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
     final width = mq.size.width;
-    // ➜ CORRECTION: `textScaleFactor` a été remplacé par `textScaler.scale(1.0)`
     final textScale = mq.textScaler.scale(1.0);
 
     final crossAxisCount = width < 420 ? 2 : 4;

@@ -4,10 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+// ✅ --- NOUVEAUX IMPORTS ---
+import '../../../inventory/data/models/article.dart';
+import '../widgets/create_purchase/form_widgets.dart'; // Pour le PickerField
+// --- FIN DES NOUVEAUX IMPORTS ---
+
 import '../../domain/entities/purchase_line_entity.dart';
 import 'qr_scanner_screen.dart';
 
-// ✅ --- MODIFICATION: Le modèle `LineItem` inclut maintenant la TVA ---
+
+// Le modèle `LineItem` reste inchangé
 class LineItem {
   final String name;
   final String? sku;
@@ -15,7 +21,7 @@ class LineItem {
   final double unitPrice;
   final DiscountType discountType;
   final double discountValue;
-  final double vatRate; // CHAMP AJOUTÉ
+  final double vatRate;
   final int codesPerItem;
 
   LineItem({
@@ -25,7 +31,7 @@ class LineItem {
     required this.unitPrice,
     this.discountType = DiscountType.none,
     this.discountValue = 0.0,
-    required this.vatRate, // RENDU OBLIGATOIRE
+    required this.vatRate,
     this.codesPerItem = 1,
   });
 
@@ -60,16 +66,48 @@ class PurchaseLineEditScreen extends StatefulWidget {
 class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  late final TextEditingController _name = TextEditingController(text: widget.initial?.name ?? '');
-  late final TextEditingController _unitPrice = TextEditingController(text: _fmtNum(widget.initial?.unitPrice ?? 0));
+  // ✅ --- MODIFICATION: Le controller de nom est remplacé par un Article ---
+  Article? _selectedArticle;
+  // --- FIN MODIFICATION ---
+
+  late final TextEditingController _unitPrice;
   late DiscountType _discountType = widget.initial?.discountType ?? DiscountType.none;
   late final TextEditingController _discountValue = TextEditingController(text: _fmtNum(widget.initial?.discountValue ?? 0));
-  
-  // ✅ --- NOUVEAU: Controller pour le champ TVA ---
   late final TextEditingController _vatRate = TextEditingController(text: ((widget.initial?.vatRate ?? 0.18) * 100).toStringAsFixed(0));
-
   late final TextEditingController _codesPerItemCtrl = TextEditingController(text: widget.initial?.codesPerItem.toString() ?? '1');
   late List<List<String>> _scannedCodeGroups = widget.initial?.scannedCodeGroups ?? [];
+
+  // ✅ --- NOUVEAU: Liste des articles disponibles ---
+  final List<Article> _availableArticles = const [
+    Article(category: ArticleCategory.phones, name: 'iPhone 14 128 Go', sku: 'IP14-128-BLK', buyPrice: 650, sellPrice: 899, qty: 12),
+    Article(category: ArticleCategory.phones, name: 'Samsung Galaxy S23', sku: 'SGS23-128', buyPrice: 540, sellPrice: 799, qty: 9),
+    Article(category: ArticleCategory.accessories, name: 'Coque Silicone (iPhone 14)', sku: 'CASE-IP14-SIL', buyPrice: 4.2, sellPrice: 12.9, qty: 140),
+    Article(category: ArticleCategory.tablets, name: 'iPad 10e Gen 64 Go', sku: 'IPAD10-64', buyPrice: 340, sellPrice: 499, qty: 7),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Si on est en mode édition, on cherche l'article correspondant pour pré-remplir
+    if (widget.initial != null) {
+      try {
+        _selectedArticle = _availableArticles.firstWhere((a) => a.name == widget.initial!.name);
+      } catch (e) {
+        _selectedArticle = null;
+      }
+    }
+    _unitPrice = TextEditingController(text: _fmtNum(widget.initial?.unitPrice ?? _selectedArticle?.buyPrice ?? 0));
+  }
+
+  @override
+  void dispose() {
+    _unitPrice.dispose();
+    _discountValue.dispose();
+    _vatRate.dispose();
+    _codesPerItemCtrl.dispose();
+    super.dispose();
+  }
+
 
   String _fmtNum(num v) => NumberFormat("#,##0.##", "fr_FR").format(v);
   num _parseNum(String v) {
@@ -77,11 +115,100 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
     return num.tryParse(clean) ?? 0;
   }
   
+  // ✅ --- NOUVEAU: Logique pour afficher le sélecteur d'articles ---
+  void _showArticlePicker() {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            String searchQuery = '';
+            final filteredItems = _availableArticles
+                .where((item) => item.name.toLowerCase().contains(searchQuery.toLowerCase()))
+                .toList();
+            final theme = Theme.of(context);
+
+            return ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text("Sélectionner un article", style: theme.textTheme.titleLarge),
+                    const SizedBox(height: 16),
+                    TextField(
+                      onChanged: (value) => setState(() => searchQuery = value),
+                      decoration: InputDecoration(
+                        hintText: 'Rechercher...',
+                        prefixIcon: const Icon(Icons.search),
+                        filled: true,
+                        fillColor: Colors.grey.shade100,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filteredItems.length,
+                        itemBuilder: (context, index) {
+                          final item = filteredItems[index];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(color: theme.colorScheme.outlineVariant.withAlpha(153)),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                radius: 18,
+                                backgroundColor: theme.colorScheme.primary.withAlpha(25),
+                                child: const Icon(Icons.inventory_2_outlined, size: 20),
+                              ),
+                              title: Text(item.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                              subtitle: Text("Prix d'achat: ${_fmtNum(item.buyPrice)} ${widget.currency}"),
+                              onTap: () {
+                                _onArticleSelected(item);
+                                Navigator.pop(context);
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _onArticleSelected(Article article) {
+    setState(() {
+      _selectedArticle = article;
+      // Auto-remplir le prix d'achat
+      _unitPrice.text = _fmtNum(article.buyPrice);
+    });
+  }
+  
   Future<void> _openScanner() async {
     if (!_formKey.currentState!.validate()) return;
-
     final codesPerItem = int.tryParse(_codesPerItemCtrl.text) ?? 1;
-    
     final result = await Navigator.of(context).push<List<List<String>>>(
       MaterialPageRoute(
         builder: (_) => QRScannerScreen(
@@ -126,13 +253,17 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
             children: [
               Text('Détails de l\'article', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _name,
-                decoration: _m3InputDecoration(context, label: 'Désignation *'),
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Ce champ est requis' : null,
+
+              // ✅ --- MODIFICATION: Le champ de texte est remplacé par un PickerField ---
+              PickerField(
+                label: 'Désignation *',
+                value: _selectedArticle?.name ?? 'Sélectionner un article...',
+                onTap: _showArticlePicker,
+                prefixIcon: Icons.inventory_2_outlined,
               ),
+              // --- FIN MODIFICATION ---
+
               const SizedBox(height: 24),
-              
               Text('Quantité par Scan', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
 
@@ -171,7 +302,6 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // ✅ --- NOUVEAU: Champ pour la TVA ---
                   Expanded(
                     flex: 2,
                     child: TextFormField(
@@ -231,6 +361,12 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
                     flex: 2,
                     child: FilledButton(
                       onPressed: () {
+                        if (_selectedArticle == null) {
+                           ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Veuillez sélectionner un article.'), backgroundColor: Colors.redAccent),
+                          );
+                          return;
+                        }
                         if (!_formKey.currentState!.validate()) return;
                         
                         if (_scannedCodeGroups.isEmpty) {
@@ -240,17 +376,17 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
                           return;
                         }
 
-                        // ✅ --- MODIFICATION: On récupère et on convertit la TVA ---
                         final vatPercent = _parseNum(_vatRate.text).toDouble();
                         final vatDecimal = vatPercent / 100.0;
 
                         final item = LineItem(
-                          name: _name.text.trim(),
+                          name: _selectedArticle!.name,
+                          sku: _selectedArticle!.sku,
                           scannedCodeGroups: _scannedCodeGroups,
                           unitPrice: _parseNum(_unitPrice.text).toDouble(),
                           discountType: _discountType,
                           discountValue: _parseNum(_discountValue.text).toDouble(),
-                          vatRate: vatDecimal, // On passe le taux en décimal
+                          vatRate: vatDecimal,
                           codesPerItem: int.tryParse(_codesPerItemCtrl.text) ?? 1,
                         );
                         Navigator.pop(context, item);

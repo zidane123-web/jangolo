@@ -1,4 +1,6 @@
-// Modèle pour les données d'un article, utilisé dans plusieurs écrans.
+// lib/features/inventory/data/models/article.dart
+
+// Modèle pour les données d'un article, maintenant réutilisable.
 class Article {
   final ArticleCategory category;
   final String name;

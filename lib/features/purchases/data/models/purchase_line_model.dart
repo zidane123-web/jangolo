@@ -3,7 +3,6 @@
 import '../../domain/entities/purchase_line_entity.dart';
 
 class PurchaseLineModel extends PurchaseLineEntity {
-  // ✅ --- CONSTRUCTEUR MIS À JOUR ---
   const PurchaseLineModel({
     required super.id,
     required super.name,
@@ -12,7 +11,7 @@ class PurchaseLineModel extends PurchaseLineEntity {
     required super.unitPrice,
     super.discountType,
     super.discountValue,
-    required super.vatRate, // Le champ est maintenant requis ici aussi
+    required super.vatRate,
   });
 
   factory PurchaseLineModel.fromEntity(PurchaseLineEntity entity) {
@@ -24,14 +23,24 @@ class PurchaseLineModel extends PurchaseLineEntity {
       unitPrice: entity.unitPrice,
       discountType: entity.discountType,
       discountValue: entity.discountValue,
-      vatRate: entity.vatRate, // On passe la valeur
+      vatRate: entity.vatRate,
     );
   }
 
   factory PurchaseLineModel.fromJson(Map<String, dynamic> json, String id) {
-    final groupsFromJson = (json['scanned_code_groups'] as List<dynamic>?)
-        ?.map((group) => List<String>.from(group as List))
-        .toList() ?? [];
+    // ✅ --- CORRECTION POUR LA LECTURE ---
+    // On lit maintenant un Map et on le transforme en List<List<String>>
+    final groupsFromJson = <List<String>>[];
+    if (json['scanned_code_groups'] is Map) {
+      final groupsMap = json['scanned_code_groups'] as Map<String, dynamic>;
+      // On trie les clés pour s'assurer que l'ordre est conservé
+      final sortedKeys = groupsMap.keys.toList()..sort();
+      for (final key in sortedKeys) {
+        if (groupsMap[key] is List) {
+          groupsFromJson.add(List<String>.from(groupsMap[key]));
+        }
+      }
+    }
 
     return PurchaseLineModel(
       id: id,
@@ -41,21 +50,26 @@ class PurchaseLineModel extends PurchaseLineEntity {
       unitPrice: (json['unit_price'] as num).toDouble(),
       discountType: DiscountType.values.byName(json['discount_type'] as String),
       discountValue: (json['discount_value'] as num).toDouble(),
-      // On s'assure de lire la TVA depuis Firestore.
-      // Pas de valeur par défaut, car elle est attendue.
       vatRate: (json['vat_rate'] as num).toDouble(),
     );
   }
 
   Map<String, dynamic> toJson() {
+    // ✅ --- CORRECTION POUR L'ÉCRITURE ---
+    // On transforme la List<List<String>> en Map<String, dynamic>
+    final Map<String, dynamic> groupsToSave = {
+      for (int i = 0; i < scannedCodeGroups.length; i++)
+        'group_$i': scannedCodeGroups[i],
+    };
+
     return {
       'name': name,
       'sku': sku,
-      'scanned_code_groups': scannedCodeGroups,
+      'scanned_code_groups': groupsToSave, // On sauvegarde le Map
       'unit_price': unitPrice,
       'discount_type': discountType.name,
       'discount_value': discountValue,
-      'vat_rate': vatRate, // On sauvegarde la TVA
+      'vat_rate': vatRate,
     };
   }
 }

@@ -5,14 +5,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-// --- IMPORTS ---
+// --- IMPORTS DE L'ARCHITECTURE ---
 import '../../data/datasources/remote_datasource.dart';
 import '../../data/repositories/purchase_repository_impl.dart';
+import '../../domain/usecases/create_purchase.dart';
+
+import '../../../settings/data/datasources/settings_remote_datasource.dart';
+import '../../../settings/data/repositories/settings_repository_impl.dart';
+import '../../../settings/domain/entities/management_entities.dart';
+import '../../../settings/domain/usecases/get_management_data.dart';
+import '../../../settings/presentation/screens/add_supplier_screen.dart';
+
+
+// --- IMPORTS DE L'UI ---
 import '../../domain/entities/payment_entity.dart';
 import '../../domain/entities/purchase_entity.dart';
 import '../../domain/entities/purchase_line_entity.dart';
-import '../../domain/usecases/create_purchase.dart';
-
 import 'purchase_line_edit_screen.dart';
 import '../models/payment_view_model.dart';
 import '../widgets/create_purchase/supplier_info_form.dart';
@@ -35,35 +43,87 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   late final PageController _pageController;
   int _currentStep = 0;
   
-  // --- ETAT ETAPE 1 ---
-  String? _supplier;
+  // --- GESTION DE L'ÉTAT DE L'ECRAN ---
+  bool _isLoading = true;
+  String? _loadingError;
+  
+  // --- ETATS DU FORMULAIRE ---
+  Supplier? _supplier;
+  Warehouse? _warehouse;
   DateTime _orderDate = DateTime.now();
-  String? _warehouse = 'Entrepôt Cotonou';
-  
-  // --- ETAT ETAPE 2 ---
   final List<LineItem> _items = [];
-  
-  // ✅ --- CORRECTION: Les anciens états de paiement sont supprimés ---
   ReceptionStatusChoice _receptionChoice = ReceptionStatusChoice.toReceive;
   final List<PaymentViewModel> _payments = [];
-  final _paymentMethods = const ['Caisse', 'Banque', 'Mobile Money'];
+  
+  // --- Listes dynamiques qui seront remplies depuis Firebase ---
+  List<Supplier> _suppliers = [];
+  List<Warehouse> _warehouses = [];
+  List<PaymentMethod> _paymentMethods = [];
 
-  final _suppliers = const [
-    'TechDistrib SARL', 'Global Imports SA', 'Phone Accessoires Plus',
-    'Innovations Mobiles', 'Électro Fourniture Express'
-  ];
-  final _warehouses = const ['Entrepôt Cotonou', 'Magasin Porto-Novo', 'Dépôt Parakou'];
   final String _currency = 'F';
   bool _isSaving = false;
+  
+  // --- Instances pour la logique métier ---
   late final CreatePurchase _createPurchase;
+  late final GetSuppliers _getSuppliers;
+  late final GetWarehouses _getWarehouses;
+  late final GetPaymentMethods _getPaymentMethods;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
-    final remoteDataSource = PurchaseRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
-    final repository = PurchaseRepositoryImpl(remoteDataSource: remoteDataSource);
-    _createPurchase = CreatePurchase(repository);
+    
+    // --- Injection des dépendances (simplifiée) ---
+    final purchaseRemoteDataSource = PurchaseRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
+    final purchaseRepository = PurchaseRepositoryImpl(remoteDataSource: purchaseRemoteDataSource);
+    _createPurchase = CreatePurchase(purchaseRepository);
+
+    final settingsRemoteDataSource = SettingsRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
+    final settingsRepository = SettingsRepositoryImpl(remoteDataSource: settingsRemoteDataSource);
+    _getSuppliers = GetSuppliers(settingsRepository);
+    _getWarehouses = GetWarehouses(settingsRepository);
+    _getPaymentMethods = GetPaymentMethods(settingsRepository);
+
+    // --- Lancement du chargement des données ---
+    _loadInitialData();
+  }
+  
+  Future<void> _loadInitialData() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception("Utilisateur non authentifié.");
+      
+      final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
+      final organizationId = userDoc.data()?['organizationId'] as String?;
+      if (organizationId == null) throw Exception("Organisation non trouvée.");
+
+      final results = await Future.wait([
+        _getSuppliers(organizationId),
+        _getWarehouses(organizationId),
+        _getPaymentMethods(organizationId),
+      ]);
+      
+      if (mounted) {
+        setState(() {
+          _suppliers = results[0] as List<Supplier>;
+          _warehouses = results[1] as List<Warehouse>;
+          _paymentMethods = results[2] as List<PaymentMethod>;
+
+          if (_warehouses.isNotEmpty) {
+            _warehouse = _warehouses.first;
+          }
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingError = "Erreur de chargement: ${e.toString()}";
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -76,7 +136,6 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
 
   Future<void> _save({required bool approve}) async {
     setState(() => _isSaving = true);
-
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception("Utilisateur non connecté.");
@@ -87,13 +146,15 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       final grandTotal = _items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble());
       final totalPaid = _payments.fold(0.0, (total, p) => total + p.amount);
       
-      final List<PaymentEntity> paymentEntities = _payments.map((p) => PaymentEntity(
-        id: UniqueKey().toString(),
-        amount: p.amount,
-        date: DateTime.now(),
-        paymentMethod: p.method,
-        treasuryAccountId: p.method,
-      )).toList();
+      final List<PaymentEntity> paymentEntities = _payments.map((p) {
+        final method = _paymentMethods.firstWhere((m) => m.name == p.method);
+        return PaymentEntity(
+          id: UniqueKey().toString(),
+          amount: p.amount,
+          date: DateTime.now(),
+          paymentMethod: method,
+        );
+      }).toList();
 
       final bool isFullyPaid = (grandTotal > 0) && (grandTotal - totalPaid).abs() < 0.01;
       PurchaseStatus status;
@@ -132,18 +193,24 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
 
       await _createPurchase(organizationId: organizationId, purchase: newPurchase);
 
-      _snack(approve ? 'Bon d’achat validé !' : 'Brouillon enregistré.');
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        _snack(approve ? 'Bon d’achat validé !' : 'Brouillon enregistré.');
+        Navigator.of(context).pop();
+      }
     } catch (e) {
-      _snack('Erreur lors de la sauvegarde: $e', isError: true);
+      if (mounted) {
+         _snack('Erreur lors de la sauvegarde: $e', isError: true);
+      }
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
   
   Future<void> _showAddPaymentDialog() async {
     final amountController = TextEditingController();
-    String? selectedMethod = _paymentMethods.first;
+    PaymentMethod? selectedMethod = _paymentMethods.isNotEmpty ? _paymentMethods.first : null;
     final formKey = GlobalKey<FormState>();
 
     final result = await showDialog<PaymentViewModel>(
@@ -171,14 +238,15 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
+                DropdownButtonFormField<PaymentMethod>(
                   value: selectedMethod,
                   decoration: const InputDecoration(
                     labelText: 'Moyen de paiement',
                     border: OutlineInputBorder(),
                   ),
-                  items: _paymentMethods.map((method) => DropdownMenuItem(value: method, child: Text(method))).toList(),
+                  items: _paymentMethods.map((method) => DropdownMenuItem(value: method, child: Text(method.name))).toList(),
                   onChanged: (v) => selectedMethod = v,
+                  validator: (v) => v == null ? 'Requis' : null,
                 ),
               ],
             ),
@@ -193,7 +261,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
                 if (formKey.currentState!.validate()) {
                   Navigator.pop(context, PaymentViewModel(
                     amount: double.parse(amountController.text),
-                    method: selectedMethod!,
+                    method: selectedMethod!.name,
                   ));
                 }
               },
@@ -233,12 +301,10 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     _showStyledPicker(
       context: context,
       title: 'Sélectionner un entrepôt',
-      items: _warehouses,
+      items: _warehouses.map((e) => e.name).toList(),
       icon: Icons.home_work_outlined,
-      onSelected: (selected) {
-        setState(() {
-          _warehouse = selected;
-        });
+      onSelected: (selectedName) {
+        setState(() => _warehouse = _warehouses.firstWhere((w) => w.name == selectedName));
         Navigator.pop(context);
       },
     );
@@ -248,14 +314,28 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     _showStyledPicker(
       context: context,
       title: 'Sélectionner un fournisseur',
-      items: _suppliers,
+      items: _suppliers.map((e) => e.name).toList(),
       icon: Icons.store_mall_directory_outlined,
-      onSelected: (selected) {
-        setState(() {
-          _supplier = selected;
-        });
+      onSelected: (selectedName) {
+        setState(() => _supplier = _suppliers.firstWhere((s) => s.name == selectedName));
         Navigator.pop(context);
       },
+      actionButton: TextButton(
+        onPressed: () async {
+          Navigator.pop(context); 
+          final newSupplier = await Navigator.of(context).push<Supplier>(
+            MaterialPageRoute(builder: (_) => const AddSupplierScreen()),
+          );
+          
+          if (newSupplier != null) {
+            setState(() {
+              _suppliers.add(newSupplier);
+              _supplier = newSupplier;
+            });
+          }
+        },
+        child: const Text('Créer'),
+      ),
     );
   }
 
@@ -367,12 +447,19 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
             scrolledUnderElevation: 0.5,
           ),
           body: SafeArea(
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              onPageChanged: (page) => setState(() => _currentStep = page),
-              children: [_buildStep1(), _buildStep2(), _buildStep3(), _buildStep4()],
-            ),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _loadingError != null
+                    ? Center(child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(_loadingError!, textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    ))
+                    : PageView(
+                        controller: _pageController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        onPageChanged: (page) => setState(() => _currentStep = page),
+                        children: [_buildStep1(), _buildStep2(), _buildStep3(), _buildStep4()],
+                      ),
           ),
         ),
       ),
@@ -387,9 +474,9 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
           Form(
             key: _step1FormKey,
             child: SupplierInfoForm(
-              supplier: _supplier,
+              supplier: _supplier?.name,
               onSupplierTap: _showSupplierPicker,
-              warehouse: _warehouse,
+              warehouse: _warehouse?.name,
               onWarehouseTap: _showWarehousePicker,
               orderDate: DateFormat('dd/MM/yyyy', 'fr_FR').format(_orderDate),
               onOrderDateTap: _pickOrderDate,
@@ -512,12 +599,15 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   }
 }
 
+// ✅ --- MODIFICATION ---
+// Remplacement du FAB par un `actionButton` de type Widget
 void _showStyledPicker({
   required BuildContext context,
   required String title,
   required List<String> items,
   required IconData icon,
   required ValueChanged<String> onSelected,
+  Widget? actionButton,
 }) {
   showModalBottomSheet(
     context: context,
@@ -541,11 +631,21 @@ void _showStyledPicker({
           return ConstrainedBox(
             constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(title, style: theme.textTheme.titleLarge),
+                  // ✅ --- MODIFICATION ---
+                  // Le titre et le bouton d'action sont dans une Row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(title, style: theme.textTheme.titleLarge),
+                      ),
+                      if (actionButton != null) actionButton,
+                    ],
+                  ),
                   const SizedBox(height: 16),
                   TextField(
                     onChanged: (value) => setState(() => searchQuery = value),

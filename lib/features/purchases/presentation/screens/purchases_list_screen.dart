@@ -3,16 +3,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-// ➜ --- NOUVEAUX IMPORTS ---
-// Import de notre logique métier (Domain et Data)
+// --- IMPORTS ---
 import '../../data/datasources/remote_datasource.dart';
 import '../../data/repositories/purchase_repository_impl.dart';
 import '../../domain/entities/purchase_entity.dart';
 import '../../domain/usecases/get_all_purchases.dart';
 
-// L'import de la page de création ne change pas
 import 'create_purchase_screen.dart';
-
 
 // L'enum de filtre reste local à cet écran
 enum _FilterStatus { paid, unpaid, draft }
@@ -98,10 +95,7 @@ class _OrdersTab extends StatefulWidget {
 class _OrdersTabState extends State<_OrdersTab>
     with AutomaticKeepAliveClientMixin {
       
-  // ➜ --- Initialisation de notre architecture ---
   late final GetAllPurchases _getAllPurchases;
-  
-  // ➜ Future pour récupérer l'organizationId une seule fois
   Future<String?>? _organizationIdFuture;
 
   _FilterStatus? _statusFilter;
@@ -110,16 +104,13 @@ class _OrdersTabState extends State<_OrdersTab>
   @override
   void initState() {
     super.initState();
-    // On instancie nos classes ici. Dans une grosse app, on utiliserait un injecteur de dépendances.
     final remoteDataSource = PurchaseRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
     final repository = PurchaseRepositoryImpl(remoteDataSource: remoteDataSource);
     _getAllPurchases = GetAllPurchases(repository);
 
-    // On lance la récupération de l'ID de l'organisation
     _organizationIdFuture = _getOrganizationId();
   }
   
-  /// Récupère l'ID de l'organisation de l'utilisateur actuellement connecté.
   Future<String?> _getOrganizationId() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
@@ -130,9 +121,8 @@ class _OrdersTabState extends State<_OrdersTab>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Important pour AutomaticKeepAliveClientMixin
+    super.build(context);
 
-    // ➜ --- Utilisation de FutureBuilder et StreamBuilder ---
     return FutureBuilder<String?>(
       future: _organizationIdFuture,
       builder: (context, orgSnapshot) {
@@ -169,7 +159,6 @@ class _OrdersTabState extends State<_OrdersTab>
     );
   }
 
-  // ➜ --- Logique de filtrage et de statistiques mise à jour ---
   List<PurchaseEntity> _filterPurchases(List<PurchaseEntity> allPurchases) {
     return allPurchases.where((p) {
       final statusMatch = _statusFilter == null || _matchesFilter(p.status, _statusFilter!);
@@ -195,7 +184,6 @@ class _OrdersTabState extends State<_OrdersTab>
     return _PStats(openCount: open.length, supplierDebt: debt);
   }
 
-  // ➜ --- UI principale extraite dans une méthode pour plus de clarté ---
   Widget _buildPurchaseList(List<PurchaseEntity> list, _PStats stats) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
@@ -247,7 +235,11 @@ class _OrdersTabState extends State<_OrdersTab>
         ),
         if (list.isEmpty)
           const SliverFillRemaining(
-            child: Center(child: Text("Aucun achat trouvé pour cette date.")),
+            hasScrollBody: false,
+            child: Center(child: Padding(
+              padding: EdgeInsets.all(32.0),
+              child: Text("Aucun achat trouvé pour cette date."),
+            )),
           )
         else
           SliverPadding(
@@ -260,6 +252,7 @@ class _OrdersTabState extends State<_OrdersTab>
                 final color = _statusColor(p.status);
                 return InkWell(
                   onTap: () {},
+                  borderRadius: BorderRadius.circular(14),
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -278,10 +271,10 @@ class _OrdersTabState extends State<_OrdersTab>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('${p.id} • ${p.supplier}', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                              Text('${p.id} • ${p.supplier.name}', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                               const SizedBox(height: 2),
                               Text(
-                                '${_statusLabel(p.status)} • Créé: ${_d(p.createdAt)} • ETA: ${_d(p.eta)} • ${p.warehouse}',
+                                '${_statusLabel(p.status)} • Créé: ${_d(p.createdAt)} • ETA: ${_d(p.eta)} • ${p.warehouse.name}',
                                 style: tt.bodySmall?.copyWith(color: cs.outline),
                               ),
                             ],
@@ -321,7 +314,6 @@ class _OrdersTabState extends State<_OrdersTab>
     );
   }
 
-  // ➜ --- Méthodes utilitaires adaptées pour PurchaseEntity ---
   bool _isSameDay(DateTime date1, DateTime date2) =>
       date1.year == date2.year && date1.month == date2.month && date1.day == date2.day;
   
@@ -396,7 +388,6 @@ class _StatsTab extends StatelessWidget {
 
 // ==== Widgets internes (mis à jour ou nouveaux) ==================================
 
-// ➜ Nouvelle classe pour les statistiques calculées
 class _PStats {
   final int openCount;
   final double supplierDebt;

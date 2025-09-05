@@ -19,6 +19,7 @@ class AddSupplierScreen extends StatefulWidget {
 class _AddSupplierScreenState extends State<AddSupplierScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _phoneController = TextEditingController(); // ✅ Contrôleur pour le téléphone
   bool _isSaving = false;
 
   late final AddSupplier _addSupplier;
@@ -35,6 +36,7 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _phoneController.dispose(); // ✅ Ne pas oublier de le libérer
     super.dispose();
   }
 
@@ -51,9 +53,13 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
       final organizationId = userDoc.data()?['organizationId'] as String?;
       if (organizationId == null) throw Exception("Organisation non trouvée.");
 
+      // ✅ On récupère le nom et le téléphone pour les passer au cas d'utilisation
+      final phone = _phoneController.text.trim();
+
       final newSupplier = await _addSupplier(
         organizationId: organizationId,
         name: _nameController.text.trim(),
+        phone: phone.isNotEmpty ? phone : null, // On passe null si le champ est vide
       );
 
       if (mounted) {
@@ -88,6 +94,7 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Nom du fournisseur *',
                   border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.store_mall_directory_outlined),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -96,13 +103,25 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
                   return null;
                 },
               ),
+              const SizedBox(height: 16),
+              // ✅ Ajout du champ téléphone
+              TextFormField(
+                controller: _phoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Numéro de téléphone (optionnel)',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.phone_outlined),
+                ),
+                keyboardType: TextInputType.phone,
+              ),
               const SizedBox(height: 24),
               _isSaving
                   ? const Center(child: CircularProgressIndicator())
-                  : FilledButton(
+                  : FilledButton.icon(
                       onPressed: _onSave,
                       style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
-                      child: const Text('Enregistrer'),
+                      icon: const Icon(Icons.save_alt_outlined),
+                      label: const Text('Enregistrer'),
                     ),
             ],
           ),

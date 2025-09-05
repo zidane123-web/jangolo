@@ -25,7 +25,7 @@ class SettingsRepositoryImpl implements SettingsRepository {
   }
 
   @override
-  Future<Supplier> addSupplier({required String organizationId, required String name}) {
-    return remoteDataSource.addSupplier(organizationId, name);
+  Future<Supplier> addSupplier({required String organizationId, required String name, String? phone}) {
+    return remoteDataSource.addSupplier(organizationId, name, phone);
   }
 }

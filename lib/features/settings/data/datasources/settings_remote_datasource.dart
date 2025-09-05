@@ -9,7 +9,7 @@ abstract class SettingsRemoteDataSource {
   Future<List<PaymentMethodModel>> getPaymentMethods(String organizationId);
 
   // Nouvelle méthode pour ajouter un fournisseur à Firestore
-  Future<SupplierModel> addSupplier(String organizationId, String name);
+  Future<SupplierModel> addSupplier(String organizationId, String name, String? phone);
 }
 
 class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
@@ -65,13 +65,13 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
   }
 
   @override
-  Future<SupplierModel> addSupplier(String organizationId, String name) async {
+  Future<SupplierModel> addSupplier(String organizationId, String name, String? phone) async {
     try {
       final docRef = await firestore
           .collection('organisations')
           .doc(organizationId)
           .collection('suppliers')
-          .add({'name': name, 'contact': null, 'phone': null}); // On ajoute le document avec des champs par défaut
+          .add({'name': name, 'contact': null, 'phone': phone}); // On ajoute le document avec le téléphone
 
       // On récupère le document fraîchement créé pour avoir son ID
       final doc = await docRef.get();

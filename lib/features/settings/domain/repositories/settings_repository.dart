@@ -8,5 +8,5 @@ abstract class SettingsRepository {
   Future<List<PaymentMethod>> getPaymentMethods(String organizationId);
 
   // ✅ NOUVELLE MÉTHODE
-  Future<Supplier> addSupplier({required String organizationId, required String name});
+  Future<Supplier> addSupplier({required String organizationId, required String name, String? phone});
 }

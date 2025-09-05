@@ -7,7 +7,7 @@ import 'package:intl/intl.dart';
 import '../../domain/entities/purchase_line_entity.dart';
 import 'qr_scanner_screen.dart';
 
-// Le modèle `LineItem` est mis à jour pour correspondre à l'entité
+// ✅ --- MODIFICATION: Le modèle `LineItem` inclut maintenant la TVA ---
 class LineItem {
   final String name;
   final String? sku;
@@ -15,7 +15,7 @@ class LineItem {
   final double unitPrice;
   final DiscountType discountType;
   final double discountValue;
-  final double vatRate;
+  final double vatRate; // CHAMP AJOUTÉ
   final int codesPerItem;
 
   LineItem({
@@ -25,7 +25,7 @@ class LineItem {
     required this.unitPrice,
     this.discountType = DiscountType.none,
     this.discountValue = 0.0,
-    this.vatRate = 0.18,
+    required this.vatRate, // RENDU OBLIGATOIRE
     this.codesPerItem = 1,
   });
 
@@ -65,6 +65,9 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   late DiscountType _discountType = widget.initial?.discountType ?? DiscountType.none;
   late final TextEditingController _discountValue = TextEditingController(text: _fmtNum(widget.initial?.discountValue ?? 0));
   
+  // ✅ --- NOUVEAU: Controller pour le champ TVA ---
+  late final TextEditingController _vatRate = TextEditingController(text: ((widget.initial?.vatRate ?? 0.18) * 100).toStringAsFixed(0));
+
   late final TextEditingController _codesPerItemCtrl = TextEditingController(text: widget.initial?.codesPerItem.toString() ?? '1');
   late List<List<String>> _scannedCodeGroups = widget.initial?.scannedCodeGroups ?? [];
 
@@ -75,7 +78,6 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   }
   
   Future<void> _openScanner() async {
-    // On valide le champ avant de continuer
     if (!_formKey.currentState!.validate()) return;
 
     final codesPerItem = int.tryParse(_codesPerItemCtrl.text) ?? 1;
@@ -154,11 +156,13 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
 
               const SizedBox(height: 24),
 
-              Text('Prix et Remise', style: Theme.of(context).textTheme.titleLarge),
+              Text('Prix, Remise et TVA', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
+                    flex: 3,
                     child: TextFormField(
                       controller: _unitPrice,
                       decoration: _m3InputDecoration(context, label: 'Prix unitaire *', suffixText: widget.currency),
@@ -167,6 +171,26 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
+                  // ✅ --- NOUVEAU: Champ pour la TVA ---
+                  Expanded(
+                    flex: 2,
+                    child: TextFormField(
+                      controller: _vatRate,
+                      decoration: _m3InputDecoration(context, label: 'TVA *', suffixText: '%'),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) return 'Requis';
+                        final val = _parseNum(v);
+                        if (val < 0) return '≥ 0';
+                        return null;
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
                   Expanded(
                     child: DropdownButtonFormField<DiscountType>(
                       value: _discountType,
@@ -179,15 +203,19 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
                       onChanged: (v) => setState(() => _discountType = v ?? DiscountType.none),
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  if (_discountType != DiscountType.none)
+                    Expanded(
+                      child: TextFormField(
+                        controller: _discountValue,
+                        decoration: _m3InputDecoration(context, label: 'Valeur remise', suffixText: _discountType == DiscountType.percent ? '%' : widget.currency),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                  if(_discountType == DiscountType.none)
+                    const Spacer(),
                 ],
               ),
-              const SizedBox(height: 16),
-              if (_discountType != DiscountType.none)
-                TextFormField(
-                  controller: _discountValue,
-                  decoration: _m3InputDecoration(context, label: 'Valeur de la remise', suffixText: _discountType == DiscountType.percent ? '%' : widget.currency),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                ),
               const SizedBox(height: 32),
               Row(
                 children: [
@@ -212,12 +240,17 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
                           return;
                         }
 
+                        // ✅ --- MODIFICATION: On récupère et on convertit la TVA ---
+                        final vatPercent = _parseNum(_vatRate.text).toDouble();
+                        final vatDecimal = vatPercent / 100.0;
+
                         final item = LineItem(
                           name: _name.text.trim(),
                           scannedCodeGroups: _scannedCodeGroups,
                           unitPrice: _parseNum(_unitPrice.text).toDouble(),
                           discountType: _discountType,
                           discountValue: _parseNum(_discountValue.text).toDouble(),
+                          vatRate: vatDecimal, // On passe le taux en décimal
                           codesPerItem: int.tryParse(_codesPerItemCtrl.text) ?? 1,
                         );
                         Navigator.pop(context, item);

@@ -7,12 +7,13 @@ class PurchaseLineEntity {
   final String name;
   final String? sku;
   
-  // ✅ La liste de codes devient une liste de groupes de codes.
+  // La liste de codes devient une liste de groupes de codes.
   final List<List<String>> scannedCodeGroups;
 
   final double unitPrice;
   final DiscountType discountType;
   final double discountValue;
+  // ✅ MODIFICATION : Le taux de TVA est maintenant requis.
   final double vatRate;
 
   const PurchaseLineEntity({
@@ -23,7 +24,7 @@ class PurchaseLineEntity {
     required this.unitPrice,
     this.discountType = DiscountType.none,
     this.discountValue = 0.0,
-    this.vatRate = 0.18,
+    required this.vatRate, // ✅ MODIFICATION : Plus de valeur par défaut.
   });
 
   // La quantité est maintenant le nombre de groupes.

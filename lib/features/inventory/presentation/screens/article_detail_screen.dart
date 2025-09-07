@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../data/models/article.dart';
+import '../../data/models/article_detail_data.dart';
 import '../../data/models/movement.dart';
 import 'movements_page.dart';
 

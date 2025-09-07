@@ -13,10 +13,8 @@ import '../../domain/entities/payment_entity.dart';
 import '../../domain/entities/purchase_entity.dart';
 import '../../domain/entities/purchase_line_entity.dart';
 import '../models/payment_view_model.dart';
+import '../models/reception_status_choice.dart';
 import '../screens/purchase_line_edit_screen.dart' show LineItem;
-
-/// Status of reception for a purchase.
-enum ReceptionStatusChoice { toReceive, alreadyReceived }
 
 /// Bundles initial data needed to create a purchase.
 class InitialPurchaseData {
@@ -158,7 +156,7 @@ class CreatePurchaseController {
   }
 
   /// Adds a new supplier to the organisation.
-  Future<Supplier> addSupplier({required String name, required String phone}) async {
+  Future<Supplier> addSupplier({required String name, String? phone}) async {
     final organizationId = await _getOrganizationId();
     return _addSupplier(
       organizationId: organizationId,
@@ -168,7 +166,7 @@ class CreatePurchaseController {
   }
 
   /// Adds a new warehouse to the organisation.
-  Future<Warehouse> addWarehouse({required String name, required String address}) async {
+  Future<Warehouse> addWarehouse({required String name, String? address}) async {
     final organizationId = await _getOrganizationId();
     return _addWarehouse(
       organizationId: organizationId,

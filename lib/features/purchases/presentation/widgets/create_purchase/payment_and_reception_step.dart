@@ -2,8 +2,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:jangolo/features/purchases/presentation/screens/create_purchase_screen.dart';
+
 import '../../models/payment_view_model.dart';
+import '../../models/reception_status_choice.dart';
 
 class PaymentAndReceptionStep extends StatelessWidget {
   // --- Données pour le calcul des totaux ---

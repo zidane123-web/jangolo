@@ -121,7 +121,14 @@ class PickerFormField extends StatelessWidget {
     return FormField<String>(
       validator: validator,
       builder: (state) {
-        if (state.value != value) state.didChange(value);
+        // ✅ --- CORRECTION APPLIQUÉE ICI ---
+        // On vérifie si la valeur a changé et on programme la mise à jour
+        // pour qu'elle s'exécute juste après la fin du processus de build.
+        if (state.value != value) {
+          Future.microtask(() => state.didChange(value));
+        }
+        // --- FIN DE LA CORRECTION ---
+
         return InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),

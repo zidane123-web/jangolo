@@ -65,16 +65,12 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
 
   final String _currency = 'F';
   bool _isSaving = false;
-
-  // Contrôleur persistant pour la recherche dans les sélecteurs
-  final TextEditingController _pickerSearchCtrl = TextEditingController();
   
   // --- Instances pour la logique métier ---
   late final CreatePurchase _createPurchase;
   late final GetSuppliers _getSuppliers;
   late final GetWarehouses _getWarehouses;
   late final GetPaymentMethods _getPaymentMethods;
-  // ✅ NOUVEAU: Ajout des UseCases pour la création
   late final AddSupplier _addSupplier;
   late final AddWarehouse _addWarehouse;
 
@@ -93,7 +89,6 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     _getSuppliers = GetSuppliers(settingsRepository);
     _getWarehouses = GetWarehouses(settingsRepository);
     _getPaymentMethods = GetPaymentMethods(settingsRepository);
-    // ✅ NOUVEAU: Initialisation des UseCases
     _addSupplier = AddSupplier(settingsRepository);
     _addWarehouse = AddWarehouse(settingsRepository);
 
@@ -120,7 +115,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       if (mounted) {
         setState(() {
           _suppliers = results[0] as List<Supplier>;
-          _warehouses = results[1] as List<Warehouse>; // ✅ C'est déjà le bon type ici
+          _warehouses = results[1] as List<Warehouse>;
           _paymentMethods = results[2] as List<PaymentMethod>;
 
           if (_warehouses.isNotEmpty) {
@@ -142,7 +137,6 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   @override
   void dispose() {
     _pageController.dispose();
-    _pickerSearchCtrl.dispose();
     super.dispose();
   }
   
@@ -725,6 +719,8 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   }
 }
 
+// ✅ --- DÉBUT DE LA CORRECTION ---
+// La fonction est transformée en une méthode qui affiche un widget dédié.
 void _showStyledPicker({
   required BuildContext context,
   required String title,
@@ -733,7 +729,6 @@ void _showStyledPicker({
   required ValueChanged<String> onSelected,
   Widget? actionButton,
 }) {
-  _pickerSearchCtrl.clear();
   showModalBottomSheet(
     context: context,
     useSafeArea: true,
@@ -744,79 +739,132 @@ void _showStyledPicker({
     ),
     showDragHandle: true,
     builder: (context) {
-      return StatefulBuilder(
-        builder: (BuildContext context, StateSetter setState) {
-          final filteredItems = items
-              .where((item) => item
-                  .toLowerCase()
-                  .contains(_pickerSearchCtrl.text.toLowerCase()))
-              .toList();
-          final theme = Theme.of(context);
-
-          return ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(title, style: theme.textTheme.titleLarge),
-                      ),
-                      if (actionButton != null) actionButton,
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _pickerSearchCtrl,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      hintText: 'Rechercher...',
-                      prefixIcon: const Icon(Icons.search),
-                      filled: true,
-                      fillColor: Colors.grey.shade100,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: filteredItems.length,
-                      itemBuilder: (context, index) {
-                        final item = filteredItems[index];
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: theme.colorScheme.outlineVariant.withAlpha(153)),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              radius: 18,
-                              backgroundColor: theme.colorScheme.primary.withAlpha(25),
-                              child: Icon(icon, size: 20),
-                            ),
-                            title: Text(item, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                            onTap: () => onSelected(item),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
+      return _StyledPickerSheet(
+        title: title,
+        items: items,
+        icon: icon,
+        onSelected: onSelected,
+        actionButton: actionButton,
       );
     },
   );
+}
+
+// Nouveau widget Stateful pour gérer correctement l'état de la feuille modale.
+class _StyledPickerSheet extends StatefulWidget {
+  final String title;
+  final List<String> items;
+  final IconData icon;
+  final ValueChanged<String> onSelected;
+  final Widget? actionButton;
+
+  const _StyledPickerSheet({
+    required this.title,
+    required this.items,
+    required this.icon,
+    required this.onSelected,
+    this.actionButton,
+  });
+
+  @override
+  State<_StyledPickerSheet> createState() => _StyledPickerSheetState();
+}
+
+class _StyledPickerSheetState extends State<_StyledPickerSheet> {
+  late final TextEditingController _searchController;
+  late List<String> _filteredItems;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+    _filteredItems = widget.items;
+    _searchController.addListener(() {
+      final query = _searchController.text.toLowerCase();
+      setState(() {
+        _filteredItems = widget.items
+            .where((item) => item.toLowerCase().contains(query))
+            .toList();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Permet au contenu de ne pas être caché par le clavier
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 12,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(widget.title, style: theme.textTheme.titleLarge),
+              ),
+              if (widget.actionButton != null) widget.actionButton!,
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Rechercher...',
+              prefixIcon: const Icon(Icons.search),
+              filled: true,
+              fillColor: Colors.grey.shade100,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // La ListView doit être dans un Flexible pour éviter l'overflow
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _filteredItems.length,
+              itemBuilder: (context, index) {
+                final item = _filteredItems[index];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(
+                        color: theme.colorScheme.outlineVariant.withAlpha(153)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: theme.colorScheme.primary.withAlpha(25),
+                      child: Icon(widget.icon, size: 20),
+                    ),
+                    title: Text(item,
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    onTap: () => widget.onSelected(item),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

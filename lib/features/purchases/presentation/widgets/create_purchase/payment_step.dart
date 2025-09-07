@@ -1,12 +1,11 @@
-// lib/features/purchases/presentation/widgets/create_purchase/payment_and_reception_step.dart
+// lib/features/purchases/presentation/widgets/create_purchase/payment_step.dart
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/payment_view_model.dart';
-import '../../models/reception_status_choice.dart';
 
-class PaymentAndReceptionStep extends StatelessWidget {
+class PaymentStep extends StatelessWidget {
   // --- Données pour le calcul des totaux ---
   final double grandTotal;
   final String currency;
@@ -15,20 +14,18 @@ class PaymentAndReceptionStep extends StatelessWidget {
   final List<PaymentViewModel> payments;
   final VoidCallback onAddPayment;
   final ValueChanged<int> onRemovePayment;
-  
-  // --- Callbacks et valeurs pour le statut de réception ---
-  final ReceptionStatusChoice receptionStatus;
-  final ValueChanged<ReceptionStatusChoice> onReceptionStatusChanged;
+  final VoidCallback onBack;
+  final VoidCallback onNext;
 
-  const PaymentAndReceptionStep({
+  const PaymentStep({
     super.key,
     required this.grandTotal,
     required this.currency,
     required this.payments,
     required this.onAddPayment,
     required this.onRemovePayment,
-    required this.receptionStatus,
-    required this.onReceptionStatusChanged,
+    required this.onBack,
+    required this.onNext,
   });
 
   // Calcule le total payé à partir de la liste
@@ -44,72 +41,63 @@ class PaymentAndReceptionStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // --- Section Paiements ---
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Paiements', style: theme.textTheme.titleLarge),
-              FilledButton.tonalIcon(
-                onPressed: onAddPayment,
-                icon: const Icon(Icons.add),
-                label: const Text('Ajouter'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          
-          // Affiche la liste des paiements ou un message si vide
-          payments.isEmpty
-              ? const _EmptyPaymentState()
-              : ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: payments.length,
-                  itemBuilder: (context, index) {
-                    final payment = payments[index];
-                    return _PaymentTile(
-                      payment: payment,
-                      currency: currency,
-                      onDelete: () => onRemovePayment(index),
-                    );
-                  },
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // --- Section Paiements ---
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Paiements', style: theme.textTheme.titleLarge),
+                    FilledButton.tonalIcon(
+                      onPressed: onAddPayment,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Ajouter'),
+                    ),
+                  ],
                 ),
-          
-          const SizedBox(height: 16),
-          _buildTotals(theme),
-          
-          const Divider(height: 48),
+                const SizedBox(height: 16),
 
-          // --- Section Réception ---
-          Text('Statut de la Réception', style: theme.textTheme.titleLarge),
-          const SizedBox(height: 12),
-          SegmentedButton<ReceptionStatusChoice>(
-            segments: const [
-              ButtonSegment(
-                value: ReceptionStatusChoice.toReceive,
-                label: Text('À recevoir'),
-                icon: Icon(Icons.local_shipping_outlined),
-              ),
-              ButtonSegment(
-                value: ReceptionStatusChoice.alreadyReceived,
-                label: Text('Déjà Reçu'),
-                icon: Icon(Icons.inventory_2_outlined),
-              ),
-            ],
-            selected: {receptionStatus},
-            onSelectionChanged: (selection) => onReceptionStatusChanged(selection.first),
-            style: SegmentedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              textStyle: theme.textTheme.labelLarge,
+                // Affiche la liste des paiements ou un message si vide
+                payments.isEmpty
+                    ? const _EmptyPaymentState()
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: payments.length,
+                        itemBuilder: (context, index) {
+                          final payment = payments[index];
+                          return _PaymentTile(
+                            payment: payment,
+                            currency: currency,
+                            onDelete: () => onRemovePayment(index),
+                          );
+                        },
+                      ),
+
+                const SizedBox(height: 16),
+                _buildTotals(theme),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              OutlinedButton(onPressed: onBack, child: const Text('Retour')),
+              const Spacer(),
+              FilledButton(onPressed: onNext, child: const Text('Suivant')),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -120,7 +108,8 @@ class PaymentAndReceptionStep extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerLowest,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: theme.colorScheme.outlineVariant.withAlpha(100)),
+        side:
+            BorderSide(color: theme.colorScheme.outlineVariant.withAlpha(100)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -134,8 +123,7 @@ class PaymentAndReceptionStep extends StatelessWidget {
               label: balanceDue >= 0 ? 'Solde Restant' : 'Crédit',
               value: _money(balanceDue.abs()),
               isBold: true,
-              color:
-                  balanceDue > 0 ? theme.colorScheme.error : Colors.green,
+              color: balanceDue > 0 ? theme.colorScheme.error : Colors.green,
             ),
           ],
         ),
@@ -157,11 +145,13 @@ class _EmptyPaymentState extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.colorScheme.outlineVariant.withAlpha(100)),
+        border:
+            Border.all(color: theme.colorScheme.outlineVariant.withAlpha(100)),
       ),
       child: Column(
         children: [
-          Icon(Icons.payment_outlined, size: 32, color: theme.colorScheme.secondary),
+          Icon(Icons.payment_outlined,
+              size: 32, color: theme.colorScheme.secondary),
           const SizedBox(height: 8),
           Text(
             'Aucun paiement enregistré',
@@ -170,7 +160,8 @@ class _EmptyPaymentState extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             'Cliquez sur "Ajouter" pour commencer.',
-            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
         ],
       ),
@@ -199,7 +190,8 @@ class _PaymentTile extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: theme.colorScheme.outlineVariant.withAlpha(100)),
+        side:
+            BorderSide(color: theme.colorScheme.outlineVariant.withAlpha(100)),
       ),
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
@@ -207,7 +199,8 @@ class _PaymentTile extends StatelessWidget {
           backgroundColor: theme.colorScheme.secondaryContainer,
           child: const Icon(Icons.receipt_long_outlined),
         ),
-        title: Text(formattedAmount, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(formattedAmount,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text('Via: ${payment.method}'),
         trailing: IconButton(
           icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),

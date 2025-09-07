@@ -92,7 +92,7 @@ class _WarehousesListScreenState extends State<WarehousesListScreen> {
         content: Text('Voulez-vous vraiment supprimer l\'entrepôt "${warehouse.name}" ? Cette action est irréversible.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Supprimer'), style: FilledButton.styleFrom(backgroundColor: Colors.red)),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), style: FilledButton.styleFrom(backgroundColor: Colors.red), child: const Text('Supprimer')),
         ],
       ),
     );

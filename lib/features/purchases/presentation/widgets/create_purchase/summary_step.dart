@@ -5,6 +5,7 @@ import 'purchase_summary_card.dart';
 
 class SummaryStep extends StatelessWidget {
   final List<LineItem> items;
+  final double shippingFees; // ✅ NOUVEAU: On reçoit les frais de transport
   final String currency;
   final bool isSaving;
   final VoidCallback onBack;
@@ -14,6 +15,7 @@ class SummaryStep extends StatelessWidget {
   const SummaryStep({
     super.key,
     required this.items,
+    required this.shippingFees, // ✅ NOUVEAU
     required this.currency,
     required this.isSaving,
     required this.onBack,
@@ -21,8 +23,9 @@ class SummaryStep extends StatelessWidget {
     required this.onValidate,
   });
 
+  // ✅ Le calcul du total inclut maintenant les frais de transport
   double get grandTotal =>
-      items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble());
+      items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble()) + shippingFees;
 
   @override
   Widget build(BuildContext context) {
@@ -41,14 +44,16 @@ class SummaryStep extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(onPressed: onBack, child: const Text('Retour')),
+                  child: OutlinedButton(
+                      onPressed: onBack, child: const Text('Retour')),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
                   child: FilledButton.icon(
                     onPressed: onValidate,
-                    style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                    style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16)),
                     icon: const Icon(Icons.check_circle_outline),
                     label: const Text('Valider la Commande'),
                   ),

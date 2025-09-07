@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 
 import '../../data/datasources/settings_remote_datasource.dart';
 import '../../data/repositories/settings_repository_impl.dart';
-import '../../domain/entities/management_entities.dart';
 import '../../domain/usecases/add_supplier.dart';
 
 class AddSupplierScreen extends StatefulWidget {

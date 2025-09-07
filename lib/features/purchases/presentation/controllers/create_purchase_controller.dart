@@ -40,12 +40,16 @@ class CreatePurchaseController {
 
   CreatePurchaseController() {
     final firestore = FirebaseFirestore.instance;
-    final purchaseRemoteDataSource = PurchaseRemoteDataSourceImpl(firestore: firestore);
-    final purchaseRepository = PurchaseRepositoryImpl(remoteDataSource: purchaseRemoteDataSource);
+    final purchaseRemoteDataSource =
+        PurchaseRemoteDataSourceImpl(firestore: firestore);
+    final purchaseRepository =
+        PurchaseRepositoryImpl(remoteDataSource: purchaseRemoteDataSource);
     _createPurchase = CreatePurchase(purchaseRepository);
 
-    final settingsRemoteDataSource = SettingsRemoteDataSourceImpl(firestore: firestore);
-    final settingsRepository = SettingsRepositoryImpl(remoteDataSource: settingsRemoteDataSource);
+    final settingsRemoteDataSource =
+        SettingsRemoteDataSourceImpl(firestore: firestore);
+    final settingsRepository =
+        SettingsRepositoryImpl(remoteDataSource: settingsRemoteDataSource);
     _getSuppliers = GetSuppliers(settingsRepository);
     _getWarehouses = GetWarehouses(settingsRepository);
     _getPaymentMethods = GetPaymentMethods(settingsRepository);
@@ -56,7 +60,8 @@ class CreatePurchaseController {
   Future<String> _getOrganizationId() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Utilisateur non authentifié.');
-    final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
+    final userDoc =
+        await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
     final organizationId = userDoc.data()?['organizationId'] as String?;
     if (organizationId == null) throw Exception('Organisation non trouvée.');
     return organizationId;
@@ -86,6 +91,7 @@ class CreatePurchaseController {
     required List<PaymentViewModel> payments,
     required List<PaymentMethod> paymentMethods,
     required ReceptionStatusChoice receptionChoice,
+    required double shippingFees, // ✅ NOUVEAU PARAMÈTRE
     required bool approve,
   }) async {
     final organizationId = await _getOrganizationId();
@@ -117,7 +123,8 @@ class CreatePurchaseController {
 
     if (!approve) {
       status = PurchaseStatus.draft;
-    } else if (receptionChoice == ReceptionStatusChoice.alreadyReceived && isFullyPaid) {
+    } else if (receptionChoice == ReceptionStatusChoice.alreadyReceived &&
+        isFullyPaid) {
       status = PurchaseStatus.paid;
     } else if (receptionChoice == ReceptionStatusChoice.alreadyReceived) {
       status = PurchaseStatus.received;
@@ -133,6 +140,7 @@ class CreatePurchaseController {
       eta: orderDate.add(const Duration(days: 7)),
       warehouse: warehouse,
       payments: paymentEntities,
+      shippingFees: shippingFees, // ✅ ON PASSE LA NOUVELLE VALEUR
       items: items.asMap().entries.map((entry) {
         final item = entry.value;
         final index = entry.key;
@@ -166,7 +174,8 @@ class CreatePurchaseController {
   }
 
   /// Adds a new warehouse to the organisation.
-  Future<Warehouse> addWarehouse({required String name, String? address}) async {
+  Future<Warehouse> addWarehouse(
+      {required String name, String? address}) async {
     final organizationId = await _getOrganizationId();
     return _addWarehouse(
       organizationId: organizationId,
@@ -175,4 +184,3 @@ class CreatePurchaseController {
     );
   }
 }
-

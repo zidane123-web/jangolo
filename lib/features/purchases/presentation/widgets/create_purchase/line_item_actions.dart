@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../screens/purchase_line_edit_screen.dart' show LineItem;
+import '../../screens/purchase_line_edit_screen.dart';
 
 Future<LineItem?> editLineItem(BuildContext context, String currency,
     {LineItem? current}) {

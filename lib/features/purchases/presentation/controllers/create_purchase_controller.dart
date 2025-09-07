@@ -1,14 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../data/datasources/remote_datasource.dart';
-import '../../data/repositories/purchase_repository_impl.dart';
-import '../../domain/usecases/create_purchase.dart';
+import 'package:jangolo/features/inventory/data/models/article_model.dart';
 import '../../../settings/data/datasources/settings_remote_datasource.dart';
 import '../../../settings/data/repositories/settings_repository_impl.dart';
 import '../../../settings/domain/entities/management_entities.dart';
 import '../../../settings/domain/usecases/add_supplier.dart';
 import '../../../settings/domain/usecases/add_warehouse.dart';
 import '../../../settings/domain/usecases/get_management_data.dart';
+import '../../data/models/purchase_line_model.dart';
+import '../../data/models/purchase_model.dart';
 import '../../domain/entities/payment_entity.dart';
 import '../../domain/entities/purchase_entity.dart';
 import '../../domain/entities/purchase_line_entity.dart';
@@ -31,7 +31,7 @@ class InitialPurchaseData {
 
 /// Handles business logic for the Create Purchase screen.
 class CreatePurchaseController {
-  late final CreatePurchase _createPurchase;
+  late final FirebaseFirestore _firestore;
   late final GetSuppliers _getSuppliers;
   late final GetWarehouses _getWarehouses;
   late final GetPaymentMethods _getPaymentMethods;
@@ -39,15 +39,10 @@ class CreatePurchaseController {
   late final AddWarehouse _addWarehouse;
 
   CreatePurchaseController() {
-    final firestore = FirebaseFirestore.instance;
-    final purchaseRemoteDataSource =
-        PurchaseRemoteDataSourceImpl(firestore: firestore);
-    final purchaseRepository =
-        PurchaseRepositoryImpl(remoteDataSource: purchaseRemoteDataSource);
-    _createPurchase = CreatePurchase(purchaseRepository);
+    _firestore = FirebaseFirestore.instance;
 
     final settingsRemoteDataSource =
-        SettingsRemoteDataSourceImpl(firestore: firestore);
+        SettingsRemoteDataSourceImpl(firestore: _firestore);
     final settingsRepository =
         SettingsRepositoryImpl(remoteDataSource: settingsRemoteDataSource);
     _getSuppliers = GetSuppliers(settingsRepository);
@@ -61,13 +56,12 @@ class CreatePurchaseController {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Utilisateur non authentifié.');
     final userDoc =
-        await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
+        await _firestore.collection('utilisateurs').doc(user.uid).get();
     final organizationId = userDoc.data()?['organizationId'] as String?;
     if (organizationId == null) throw Exception('Organisation non trouvée.');
     return organizationId;
   }
 
-  /// Loads suppliers, warehouses and payment methods for the user's organisation.
   Future<InitialPurchaseData> loadInitialData() async {
     final organizationId = await _getOrganizationId();
     final results = await Future.wait([
@@ -82,7 +76,6 @@ class CreatePurchaseController {
     );
   }
 
-  /// Persists a purchase to Firestore using the provided form data.
   Future<void> savePurchase({
     required Supplier supplier,
     required Warehouse warehouse,
@@ -91,14 +84,90 @@ class CreatePurchaseController {
     required List<PaymentViewModel> payments,
     required List<PaymentMethod> paymentMethods,
     required ReceptionStatusChoice receptionChoice,
-    required double shippingFees, // ✅ NOUVEAU PARAMÈTRE
+    required double shippingFees,
     required bool approve,
   }) async {
     final organizationId = await _getOrganizationId();
+    final isReceived =
+        receptionChoice == ReceptionStatusChoice.alreadyReceived;
 
-    final grandTotal =
-        items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble());
-    final totalPaid = payments.fold(0.0, (total, p) => total + p.amount);
+    final purchaseEntity = _buildPurchaseEntity(
+      supplier: supplier,
+      warehouse: warehouse,
+      orderDate: orderDate,
+      items: items,
+      payments: payments,
+      paymentMethods: paymentMethods,
+      receptionChoice: receptionChoice,
+      shippingFees: shippingFees,
+      approve: approve,
+    );
+
+    await _firestore.runTransaction((transaction) async {
+      final purchaseRef = _firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('purchases')
+          .doc(purchaseEntity.id);
+
+      final purchaseModel = PurchaseModel.fromEntity(purchaseEntity);
+      transaction.set(purchaseRef, purchaseModel.toJson());
+
+      for (final item in purchaseEntity.items) {
+        final itemRef = purchaseRef.collection('items').doc(item.id);
+        final itemModel = PurchaseLineModel.fromEntity(item);
+        transaction.set(itemRef, itemModel.toJson());
+      }
+
+      if (isReceived && approve) {
+        for (final lineItem in items) {
+          if (lineItem.sku == null || lineItem.sku!.isEmpty) continue;
+
+          final articleRef = _firestore
+              .collection('organisations')
+              .doc(organizationId)
+              .collection('inventory')
+              .doc(lineItem.sku!);
+
+          final articleSnapshot = await transaction.get(articleRef);
+          if (!articleSnapshot.exists) {
+            throw Exception('Article avec SKU ${lineItem.sku} non trouvé.');
+          }
+          final oldArticle = ArticleModel.fromSnapshot(articleSnapshot);
+
+          final oldQty = oldArticle.totalQuantity;
+          final oldCost = oldArticle.buyPrice;
+          final newQty = lineItem.qty;
+          final newPrice = lineItem.unitPrice;
+
+          final newTotalQty = oldQty + newQty;
+          final newWeightedCost =
+              ((oldQty * oldCost) + (newQty * newPrice)) / newTotalQty;
+
+          transaction.update(articleRef, {
+            'totalQuantity': newTotalQty,
+            'buyPrice': newWeightedCost,
+          });
+        }
+      }
+    });
+  }
+
+  PurchaseEntity _buildPurchaseEntity({
+    required Supplier supplier,
+    required Warehouse warehouse,
+    required DateTime orderDate,
+    required List<LineItem> items,
+    required List<PaymentViewModel> payments,
+    required List<PaymentMethod> paymentMethods,
+    required ReceptionStatusChoice receptionChoice,
+    required double shippingFees,
+    required bool approve,
+  }) {
+    final grandTotal = items.fold<double>(
+        0.0, (total, item) => total + item.lineTotal.toDouble());
+    final totalPaid =
+        payments.fold(0.0, (total, p) => total + p.amount);
 
     final List<PaymentEntity> paymentEntities = [];
     for (var i = 0; i < payments.length; i++) {
@@ -132,7 +201,7 @@ class CreatePurchaseController {
       status = PurchaseStatus.approved;
     }
 
-    final newPurchase = PurchaseEntity(
+    return PurchaseEntity(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       supplier: supplier,
       status: status,
@@ -140,7 +209,7 @@ class CreatePurchaseController {
       eta: orderDate.add(const Duration(days: 7)),
       warehouse: warehouse,
       payments: paymentEntities,
-      shippingFees: shippingFees, // ✅ ON PASSE LA NOUVELLE VALEUR
+      shippingFees: shippingFees,
       items: items.asMap().entries.map((entry) {
         final item = entry.value;
         final index = entry.key;
@@ -156,14 +225,8 @@ class CreatePurchaseController {
         );
       }).toList(),
     );
-
-    await _createPurchase(
-      organizationId: organizationId,
-      purchase: newPurchase,
-    );
   }
 
-  /// Adds a new supplier to the organisation.
   Future<Supplier> addSupplier({required String name, String? phone}) async {
     final organizationId = await _getOrganizationId();
     return _addSupplier(
@@ -173,9 +236,7 @@ class CreatePurchaseController {
     );
   }
 
-  /// Adds a new warehouse to the organisation.
-  Future<Warehouse> addWarehouse(
-      {required String name, String? address}) async {
+  Future<Warehouse> addWarehouse({required String name, String? address}) async {
     final organizationId = await _getOrganizationId();
     return _addWarehouse(
       organizationId: organizationId,

@@ -20,4 +20,17 @@ class InventoryRepositoryImpl implements InventoryRepository {
     final model = ArticleModel.fromEntity(article);
     return remoteDataSource.addArticle(organizationId, model);
   }
+
+  @override
+  Future<ArticleEntity?> getArticleBySku(
+      String organizationId, String sku) {
+    return remoteDataSource.getArticleBySku(organizationId, sku);
+  }
+
+  @override
+  Future<void> updateArticle(
+      String organizationId, ArticleEntity article) {
+    final model = ArticleModel.fromEntity(article);
+    return remoteDataSource.updateArticle(organizationId, model);
+  }
 }

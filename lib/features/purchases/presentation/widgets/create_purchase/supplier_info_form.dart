@@ -30,23 +30,25 @@ class SupplierInfoForm extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Champ Fournisseur (maintenant un PickerField)
-        PickerField(
+        // Champ Fournisseur (FormField pour validation)
+        PickerFormField(
           key: const Key('supplier-field'),
           label: 'Fournisseur *',
-          value: supplier ?? 'Sélectionner...',
+          value: supplier,
           onTap: onSupplierTap,
           prefixIcon: Icons.store_mall_directory_outlined,
+          validator: (v) => v == null ? 'Requis' : null,
         ),
         const SizedBox(height: _vGap),
 
         // Champ Entrepôt
-        PickerField(
+        PickerFormField(
           key: const Key('warehouse-field'),
           label: 'Entrepôt de destination *',
-          value: warehouse ?? 'Sélectionner...',
+          value: warehouse,
           onTap: onWarehouseTap,
           prefixIcon: Icons.home_work_outlined,
+          validator: (v) => v == null ? 'Requis' : null,
         ),
         const SizedBox(height: _vGap),
         

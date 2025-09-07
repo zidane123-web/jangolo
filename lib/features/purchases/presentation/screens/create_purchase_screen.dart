@@ -142,7 +142,14 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     super.dispose();
   }
   
-  bool get _isFormDirty => _supplier != null || _items.isNotEmpty;
+  bool get _isFormDirty {
+    return _supplier != null ||
+        _warehouse != null ||
+        _items.isNotEmpty ||
+        _payments.isNotEmpty ||
+        _receptionChoice != ReceptionStatusChoice.toReceive ||
+        !_orderDate.isAtSameMomentAs(DateTime.now());
+  }
 
   Future<void> _save({required bool approve}) async {
     setState(() => _isSaving = true);
@@ -156,15 +163,22 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       final grandTotal = _items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble());
       final totalPaid = _payments.fold(0.0, (total, p) => total + p.amount);
       
-      final List<PaymentEntity> paymentEntities = _payments.map((p) {
-        final method = _paymentMethods.firstWhere((m) => m.name == p.method);
-        return PaymentEntity(
-          id: UniqueKey().toString(),
-          amount: p.amount,
-          date: DateTime.now(),
-          paymentMethod: method,
+      final List<PaymentEntity> paymentEntities = [];
+      for (var i = 0; i < _payments.length; i++) {
+        final p = _payments[i];
+        final method = _paymentMethods.firstWhere(
+          (m) => m.name == p.method,
+          orElse: () => PaymentMethod(id: '', name: p.method, type: ''),
         );
-      }).toList();
+        paymentEntities.add(
+          PaymentEntity(
+            id: 'pay-${DateTime.now().microsecondsSinceEpoch}-$i',
+            amount: p.amount,
+            date: DateTime.now(),
+            paymentMethod: method,
+          ),
+        );
+      }
 
       final bool isFullyPaid = (grandTotal > 0) && (grandTotal - totalPaid).abs() < 0.01;
       PurchaseStatus status;
@@ -187,12 +201,14 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         eta: _orderDate.add(const Duration(days: 7)),
         warehouse: _warehouse!,
         payments: paymentEntities,
-        items: _items.map((item) {
+        items: _items.asMap().entries.map((entry) {
+          final item = entry.value;
+          final index = entry.key;
           return PurchaseLineEntity(
-            id: UniqueKey().toString(),
+            id: 'line-${DateTime.now().microsecondsSinceEpoch}-$index',
             name: item.name,
             sku: item.sku,
-            scannedCodeGroups: item.scannedCodeGroups, 
+            scannedCodeGroups: item.scannedCodeGroups,
             unitPrice: item.unitPrice,
             discountType: DiscountType.values.byName(item.discountType.name),
             discountValue: item.discountValue,
@@ -219,8 +235,13 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   }
   
   Future<void> _showAddPaymentDialog() async {
+    final grandTotal =
+        _items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble());
+    final totalPaidSoFar =
+        _payments.fold(0.0, (total, p) => total + p.amount);
     final amountController = TextEditingController();
-    PaymentMethod? selectedMethod = _paymentMethods.isNotEmpty ? _paymentMethods.first : null;
+    PaymentMethod? selectedMethod =
+        _paymentMethods.isNotEmpty ? _paymentMethods.first : null;
     final formKey = GlobalKey<FormState>();
 
     final result = await showDialog<PaymentViewModel>(
@@ -240,10 +261,15 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
                     suffixText: _currency,
                     border: const OutlineInputBorder(),
                   ),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requis';
-                    if ((double.tryParse(v) ?? 0) <= 0) return 'Montant invalide';
+                    final parsed = double.tryParse(v) ?? 0;
+                    if (parsed <= 0) return 'Montant invalide';
+                    if (parsed > grandTotal - totalPaidSoFar) {
+                      return 'Dépasse le solde';
+                    }
                     return null;
                   },
                 ),
@@ -252,9 +278,12 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
                   value: selectedMethod,
                   decoration: const InputDecoration(
                     labelText: 'Moyen de paiement',
-                    border: const OutlineInputBorder(),
+                    border: OutlineInputBorder(),
                   ),
-                  items: _paymentMethods.map((method) => DropdownMenuItem(value: method, child: Text(method.name))).toList(),
+                  items: _paymentMethods
+                      .map((method) =>
+                          DropdownMenuItem(value: method, child: Text(method.name)))
+                      .toList(),
                   onChanged: (v) => selectedMethod = v,
                   validator: (v) => v == null ? 'Requis' : null,
                 ),
@@ -269,10 +298,13 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
             FilledButton(
               onPressed: () {
                 if (formKey.currentState!.validate()) {
-                  Navigator.pop(context, PaymentViewModel(
-                    amount: double.parse(amountController.text),
-                    method: selectedMethod!.name,
-                  ));
+                  Navigator.pop(
+                    context,
+                    PaymentViewModel(
+                      amount: double.parse(amountController.text),
+                      method: selectedMethod!.name,
+                    ),
+                  );
                 }
               },
               child: const Text('Ajouter'),
@@ -281,6 +313,8 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         );
       },
     );
+
+    amountController.dispose();
 
     if (result != null) {
       setState(() {
@@ -424,16 +458,37 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     }
   }
 
-  void _removeItem(int index) {
-    setState(() => _items.removeAt(index));
+  Future<void> _removeItem(int index) async {
+    final shouldDelete = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Supprimer cet article ?'),
+            content: const Text('Cette action est irréversible.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Supprimer'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (shouldDelete) {
+      setState(() => _items.removeAt(index));
+    }
   }
   
   void _onNext() {
     FocusScope.of(context).unfocus();
 
-    if (_currentStep == 0 && (_supplier == null || _warehouse == null)) {
-      _snack('Veuillez sélectionner un fournisseur et un entrepôt.', isError: true);
-      return;
+    if (_currentStep == 0) {
+      if (!_step1FormKey.currentState!.validate()) {
+        return;
+      }
     }
 
     if (_currentStep == 1 && _items.isEmpty) {
@@ -674,6 +729,7 @@ void _showStyledPicker({
   required ValueChanged<String> onSelected,
   Widget? actionButton,
 }) {
+  final searchController = TextEditingController();
   showModalBottomSheet(
     context: context,
     useSafeArea: true,
@@ -686,10 +742,10 @@ void _showStyledPicker({
     builder: (context) {
       return StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) {
-          String searchQuery = '';
           final filteredItems = items
-              .where((item) =>
-                  item.toLowerCase().contains(searchQuery.toLowerCase()))
+              .where((item) => item
+                  .toLowerCase()
+                  .contains(searchController.text.toLowerCase()))
               .toList();
           final theme = Theme.of(context);
 
@@ -711,7 +767,8 @@ void _showStyledPicker({
                   ),
                   const SizedBox(height: 16),
                   TextField(
-                    onChanged: (value) => setState(() => searchQuery = value),
+                    controller: searchController,
+                    onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
                       hintText: 'Rechercher...',
                       prefixIcon: const Icon(Icons.search),
@@ -757,5 +814,5 @@ void _showStyledPicker({
         },
       );
     },
-  );
+  ).whenComplete(() => searchController.dispose());
 }

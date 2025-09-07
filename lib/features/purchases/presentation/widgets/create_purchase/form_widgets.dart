@@ -99,6 +99,55 @@ class PickerField extends StatelessWidget {
   }
 }
 
+// Version FormField avec validation pour les PickerField
+class PickerFormField extends StatelessWidget {
+  final String label;
+  final String? value;
+  final VoidCallback onTap;
+  final IconData? prefixIcon;
+  final String? Function(String?)? validator;
+
+  const PickerFormField({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.prefixIcon,
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FormField<String>(
+      validator: validator,
+      builder: (state) {
+        if (state.value != value) state.didChange(value);
+        return InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: InputDecorator(
+            decoration: _m3InputDecoration(
+                  context,
+                  label: label,
+                  prefixIcon: prefixIcon,
+                ).copyWith(errorText: state.errorText),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Text(
+                value ?? 'Sélectionner...',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.copyWith(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class LineTile extends StatelessWidget {
   final LineItem item;
   final String currency;

@@ -130,10 +130,11 @@ class PaymentAndReceptionStep extends StatelessWidget {
             _TotalRow(label: 'Total Payé', value: _money(totalPaid)),
             const Divider(height: 20),
             _TotalRow(
-              label: 'Solde Restant',
-              value: _money(balanceDue),
+              label: balanceDue >= 0 ? 'Solde Restant' : 'Crédit',
+              value: _money(balanceDue.abs()),
               isBold: true,
-              color: balanceDue > 0 ? theme.colorScheme.error : Colors.green,
+              color:
+                  balanceDue > 0 ? theme.colorScheme.error : Colors.green,
             ),
           ],
         ),

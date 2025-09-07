@@ -171,95 +171,13 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       showDragHandle: true,
-      builder: (context) {
-        String searchQuery = '';
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            final filteredItems = _availableArticles
-                .where((item) => item.name.toLowerCase().contains(searchQuery.toLowerCase()))
-                .toList();
-            final theme = Theme.of(context);
-
-            return ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text("Sélectionner un article", style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 16),
-                    TextField(
-                      onChanged: (value) => setState(() => searchQuery = value),
-                      decoration: InputDecoration(
-                        hintText: 'Rechercher...',
-                        prefixIcon: const Icon(Icons.search),
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (filteredItems.isEmpty)
-                      Expanded(
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text('Aucun article trouvé.'),
-                              const SizedBox(height: 12),
-                              FilledButton(
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  _showCreateArticleSheet();
-                                },
-                                child: const Text('Créer un article'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: filteredItems.length,
-                          itemBuilder: (context, index) {
-                            final item = filteredItems[index];
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                border: Border.all(color: theme.colorScheme.outlineVariant.withAlpha(153)),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  radius: 18,
-                                  backgroundColor: theme.colorScheme.primary.withAlpha(25),
-                                  child: const Icon(Icons.inventory_2_outlined, size: 20),
-                                ),
-                                title: Text(item.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                                subtitle: Text("Prix d'achat: ${_fmtNum(item.buyPrice)} ${widget.currency}"),
-                                onTap: () {
-                                  _onArticleSelected(item);
-                                  Navigator.pop(context);
-                                },
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+      builder: (_) => _ArticlePickerSheet(
+        articles: _availableArticles,
+        currency: widget.currency,
+        onSelected: _onArticleSelected,
+        onCreate: _showCreateArticleSheet,
+        fmtNum: _fmtNum,
+      ),
     );
   }
 
@@ -273,59 +191,7 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       showDragHandle: true,
-      builder: (context) {
-        final nameCtrl = TextEditingController();
-        final formKey = GlobalKey<FormState>();
-        ArticleCategory? category;
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 24,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          ),
-          child: StatefulBuilder(
-            builder: (context, setState) {
-              return Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Créer un article', style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(labelText: 'Nom'),
-                      validator: (v) => v == null || v.trim().isEmpty ? 'Nom requis' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<ArticleCategory>(
-                      value: category,
-                      decoration: const InputDecoration(labelText: 'Catégorie'),
-                      items: ArticleCategory.values
-                          .map((c) => DropdownMenuItem(value: c, child: Text(c.name)))
-                          .toList(),
-                      onChanged: (v) => setState(() => category = v),
-                      validator: (v) => v == null ? 'Catégorie requise' : null,
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: () async {
-                        if (!formKey.currentState!.validate()) return;
-                        final cat = category!;
-                        Navigator.pop(context);
-                        await _createArticle(nameCtrl.text.trim(), cat);
-                      },
-                      child: const Text('Créer'),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
+      builder: (_) => _CreateArticleSheet(onSubmit: _createArticle),
     );
   }
 
@@ -580,6 +446,206 @@ class _ScanResultTile extends StatelessWidget {
               const Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ArticlePickerSheet extends StatefulWidget {
+  final List<Article> articles;
+  final String currency;
+  final ValueChanged<Article> onSelected;
+  final VoidCallback onCreate;
+  final String Function(num) fmtNum;
+
+  const _ArticlePickerSheet({
+    required this.articles,
+    required this.currency,
+    required this.onSelected,
+    required this.onCreate,
+    required this.fmtNum,
+  });
+
+  @override
+  State<_ArticlePickerSheet> createState() => _ArticlePickerSheetState();
+}
+
+class _ArticlePickerSheetState extends State<_ArticlePickerSheet> {
+  late final TextEditingController _searchCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _searchCtrl.text.toLowerCase();
+    final filteredItems = widget.articles
+        .where((item) => item.name.toLowerCase().contains(query))
+        .toList();
+    final theme = Theme.of(context);
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          children: [
+            Text('Sélectionner un article', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _searchCtrl,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: 'Rechercher...',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: filteredItems.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Aucun article trouvé.'),
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              widget.onCreate();
+                            },
+                            child: const Text('Créer un article'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: filteredItems.length,
+                      itemBuilder: (context, index) {
+                        final item = filteredItems[index];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: theme.colorScheme.outlineVariant.withAlpha(153)),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: theme.colorScheme.primary.withAlpha(25),
+                              child: const Icon(Icons.inventory_2_outlined, size: 20),
+                            ),
+                            title: Text(
+                              item.name,
+                              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: Text("Prix d'achat: ${widget.fmtNum(item.buyPrice)} ${widget.currency}"),
+                            onTap: () {
+                              Navigator.of(context).pop();
+                              widget.onSelected(item);
+                            },
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateArticleSheet extends StatefulWidget {
+  final Future<void> Function(String name, ArticleCategory category) onSubmit;
+
+  const _CreateArticleSheet({required this.onSubmit});
+
+  @override
+  State<_CreateArticleSheet> createState() => _CreateArticleSheetState();
+}
+
+class _CreateArticleSheetState extends State<_CreateArticleSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameCtrl;
+  ArticleCategory? _category;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        24,
+        16,
+        MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Créer un article', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(labelText: 'Nom'),
+              validator: (v) => v == null || v.trim().isEmpty ? 'Nom requis' : null,
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<ArticleCategory>(
+              value: _category,
+              decoration: const InputDecoration(labelText: 'Catégorie'),
+              items: ArticleCategory.values
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c.name)))
+                  .toList(),
+              onChanged: (v) => setState(() => _category = v),
+              validator: (v) => v == null ? 'Catégorie requise' : null,
+            ),
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: () async {
+                if (!_formKey.currentState!.validate()) return;
+                final cat = _category!;
+                Navigator.of(context).pop();
+                await widget.onSubmit(_nameCtrl.text.trim(), cat);
+              },
+              child: const Text('Créer'),
+            ),
+          ],
         ),
       ),
     );

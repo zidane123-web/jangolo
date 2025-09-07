@@ -65,6 +65,9 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
 
   final String _currency = 'F';
   bool _isSaving = false;
+
+  // Contrôleur persistant pour la recherche dans les sélecteurs
+  final TextEditingController _pickerSearchCtrl = TextEditingController();
   
   // --- Instances pour la logique métier ---
   late final CreatePurchase _createPurchase;
@@ -139,6 +142,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _pickerSearchCtrl.dispose();
     super.dispose();
   }
   
@@ -729,7 +733,7 @@ void _showStyledPicker({
   required ValueChanged<String> onSelected,
   Widget? actionButton,
 }) {
-  final searchController = TextEditingController();
+  _pickerSearchCtrl.clear();
   showModalBottomSheet(
     context: context,
     useSafeArea: true,
@@ -745,7 +749,7 @@ void _showStyledPicker({
           final filteredItems = items
               .where((item) => item
                   .toLowerCase()
-                  .contains(searchController.text.toLowerCase()))
+                  .contains(_pickerSearchCtrl.text.toLowerCase()))
               .toList();
           final theme = Theme.of(context);
 
@@ -767,7 +771,7 @@ void _showStyledPicker({
                   ),
                   const SizedBox(height: 16),
                   TextField(
-                    controller: searchController,
+                    controller: _pickerSearchCtrl,
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
                       hintText: 'Rechercher...',
@@ -814,5 +818,5 @@ void _showStyledPicker({
         },
       );
     },
-  ).whenComplete(() => searchController.dispose());
+  );
 }

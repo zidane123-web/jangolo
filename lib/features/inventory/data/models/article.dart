@@ -10,6 +10,7 @@ class Article {
   final double buyPrice;
   final double sellPrice;
   final int qty;
+  final bool hasSerializedUnits;
 
   const Article({
     required this.category,
@@ -18,5 +19,6 @@ class Article {
     required this.buyPrice,
     required this.sellPrice,
     required this.qty,
+    required this.hasSerializedUnits,
   });
 }

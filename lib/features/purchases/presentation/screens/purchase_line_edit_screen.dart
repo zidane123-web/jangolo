@@ -14,13 +14,13 @@ import '../../../inventory/data/repositories/inventory_repository_impl.dart';
 import '../../../inventory/domain/entities/article_entity.dart';
 import '../../../inventory/domain/usecases/add_article.dart';
 import '../../../inventory/domain/usecases/get_articles.dart';
+import '../../../inventory/presentation/screens/create_article_screen.dart';
 import '../widgets/create_purchase/form_widgets.dart'; // Pour le PickerField
 
 import '../../domain/entities/purchase_line_entity.dart';
 import 'qr_scanner_screen.dart';
 
 
-// Le modèle `LineItem` reste inchangé
 class LineItem {
   final String name;
   final String? sku;
@@ -30,6 +30,7 @@ class LineItem {
   final double discountValue;
   final double vatRate;
   final int codesPerItem;
+  final int? manualQty;
 
   LineItem({
     required this.name,
@@ -40,9 +41,10 @@ class LineItem {
     this.discountValue = 0.0,
     required this.vatRate,
     this.codesPerItem = 1,
+    this.manualQty,
   });
 
-  num get qty => scannedCodeGroups.length;
+  num get qty => manualQty ?? scannedCodeGroups.length;
   num get gross => qty * unitPrice;
   num get lineDiscount {
     switch (discountType) {
@@ -88,6 +90,7 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   late final TextEditingController _vatRate = TextEditingController(text: ((widget.initial?.vatRate ?? 0.18) * 100).toStringAsFixed(0));
   late final TextEditingController _codesPerItemCtrl = TextEditingController(text: widget.initial?.codesPerItem.toString() ?? '1');
   late List<List<String>> _scannedCodeGroups = widget.initial?.scannedCodeGroups ?? [];
+  late final TextEditingController _quantityCtrl = TextEditingController(text: (widget.initial?.manualQty ?? widget.initial?.qty)?.toString() ?? '1');
 
   // ✅ Liste des articles disponibles chargés depuis Firestore
   final List<Article> _availableArticles = [];
@@ -112,6 +115,7 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
     _discountValue.dispose();
     _vatRate.dispose();
     _codesPerItemCtrl.dispose();
+    _quantityCtrl.dispose();
     super.dispose();
   }
 
@@ -129,12 +133,16 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
                 buyPrice: e.buyPrice,
                 sellPrice: e.sellPrice,
                 qty: e.totalQuantity,
+                hasSerializedUnits: e.hasSerializedUnits,
               )));
       });
       if (widget.initial != null && _selectedArticle == null) {
         try {
           _selectedArticle = _availableArticles.firstWhere((a) => a.name == widget.initial!.name);
           _unitPrice.text = _fmtNum(widget.initial!.unitPrice);
+          if (!_selectedArticle!.hasSerializedUnits) {
+            _quantityCtrl.text = (widget.initial!.manualQty ?? widget.initial!.qty).toString();
+          }
         } catch (_) {}
       }
     });
@@ -155,30 +163,6 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
     if (orgId == null) throw Exception("Organisation non trouvée.");
     return orgId;
   }
-
-  Future<void> _createArticle(String name, ArticleCategory category) async {
-    final orgId = _organizationId ?? await _getOrganizationId();
-    final entity = ArticleEntity(
-      id: '',
-      name: name,
-      category: category,
-      buyPrice: 0,
-      sellPrice: 0,
-      hasSerializedUnits: false,
-      totalQuantity: 0,
-      createdAt: DateTime.now(),
-    );
-    final created = await _addArticle(orgId, entity);
-    final article = Article(
-      category: created.category,
-      name: created.name,
-      sku: created.id,
-      buyPrice: created.buyPrice,
-      sellPrice: created.sellPrice,
-      qty: created.totalQuantity,
-    );
-    _onArticleSelected(article);
-  }
   
   // ✅ --- NOUVEAU: Logique pour afficher le sélecteur d'articles ---
   void _showArticlePicker() {
@@ -194,34 +178,45 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
       builder: (_) => _ArticlePickerSheet(
         articles: _availableArticles,
         currency: widget.currency,
-        onSelected: _onArticleSelected,
-        onCreate: _showCreateArticleSheet,
-        fmtNum: _fmtNum,
-      ),
-    );
-  }
+          onSelected: _onArticleSelected,
+          onCreate: _openCreateArticleScreen,
+          fmtNum: _fmtNum,
+        ),
+      );
+    }
 
-  void _showCreateArticleSheet() {
-    showModalBottomSheet(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      showDragHandle: true,
-      builder: (_) => _CreateArticleSheet(onSubmit: _createArticle),
-    );
-  }
+    Future<void> _openCreateArticleScreen() async {
+      final orgId = _organizationId ?? await _getOrganizationId();
+      final created = await Navigator.of(context).push<ArticleEntity>(
+        MaterialPageRoute(
+          builder: (_) => CreateArticleScreen(
+            addArticle: _addArticle,
+            organizationId: orgId,
+          ),
+        ),
+      );
+      if (created != null) {
+        final article = Article(
+          category: created.category,
+          name: created.name,
+          sku: created.id,
+          buyPrice: created.buyPrice,
+          sellPrice: created.sellPrice,
+          qty: created.totalQuantity,
+          hasSerializedUnits: created.hasSerializedUnits,
+        );
+        _onArticleSelected(article);
+      }
+    }
 
-  void _onArticleSelected(Article article) {
-    setState(() {
-      _selectedArticle = article;
-      // Auto-remplir le prix d'achat
-      _unitPrice.text = _fmtNum(article.buyPrice);
-    });
-  }
+    void _onArticleSelected(Article article) {
+      setState(() {
+        _selectedArticle = article;
+        _unitPrice.text = _fmtNum(article.buyPrice);
+        _scannedCodeGroups = [];
+        _quantityCtrl.text = '1';
+      });
+    }
   
   Future<void> _openScanner() async {
     if (!_formKey.currentState!.validate()) return;
@@ -281,26 +276,40 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
               // --- FIN MODIFICATION ---
 
               const SizedBox(height: 24),
-              Text('Quantité par Scan', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _codesPerItemCtrl,
-                decoration: _m3InputDecoration(context, label: 'Nombre de codes par article *'),
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                validator: (v) {
-                  if (v == null || v.isEmpty) return 'Requis';
-                  if ((int.tryParse(v) ?? 0) < 1) return 'Doit être > 0';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              
-              _ScanResultTile(
-                count: _scannedCodeGroups.length,
-                onTap: _openScanner,
-              ),
+              if (_selectedArticle?.hasSerializedUnits ?? false) ...[
+                Text('Quantité par Scan', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _codesPerItemCtrl,
+                  decoration: _m3InputDecoration(context, label: 'Nombre de codes par article *'),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Requis';
+                    if ((int.tryParse(v) ?? 0) < 1) return 'Doit être > 0';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                _ScanResultTile(
+                  count: _scannedCodeGroups.length,
+                  onTap: _openScanner,
+                ),
+              ] else ...[
+                Text('Quantité', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _quantityCtrl,
+                  decoration: _m3InputDecoration(context, label: 'Quantité *'),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Requis';
+                    if ((int.tryParse(v) ?? 0) < 1) return 'Doit être > 0';
+                    return null;
+                  },
+                ),
+              ],
 
               const SizedBox(height: 24),
 
@@ -379,18 +388,29 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
                     child: FilledButton(
                       onPressed: () {
                         if (_selectedArticle == null) {
-                           ScaffoldMessenger.of(context).showSnackBar(
+                          ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Veuillez sélectionner un article.'), backgroundColor: Colors.redAccent),
                           );
                           return;
                         }
                         if (!_formKey.currentState!.validate()) return;
-                        
-                        if (_scannedCodeGroups.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Veuillez scanner au moins un article.'), backgroundColor: Colors.redAccent),
-                          );
-                          return;
+
+                        if (_selectedArticle!.hasSerializedUnits) {
+                          if (_scannedCodeGroups.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Veuillez scanner au moins un article.'), backgroundColor: Colors.redAccent),
+                            );
+                            return;
+                          }
+                        } else {
+                          final qty = int.tryParse(_quantityCtrl.text) ?? 0;
+                          if (qty < 1) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Quantité invalide'), backgroundColor: Colors.redAccent),
+                            );
+                            return;
+                          }
+                          _scannedCodeGroups = List.generate(qty, (_) => <String>[]);
                         }
 
                         final vatPercent = _parseNum(_vatRate.text).toDouble();
@@ -405,6 +425,7 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
                           discountValue: _parseNum(_discountValue.text).toDouble(),
                           vatRate: vatDecimal,
                           codesPerItem: int.tryParse(_codesPerItemCtrl.text) ?? 1,
+                          manualQty: _selectedArticle!.hasSerializedUnits ? null : int.tryParse(_quantityCtrl.text),
                         );
                         Navigator.pop(context, item);
                       },
@@ -589,81 +610,6 @@ class _ArticlePickerSheetState extends State<_ArticlePickerSheet> {
                         );
                       },
                     ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CreateArticleSheet extends StatefulWidget {
-  final Future<void> Function(String name, ArticleCategory category) onSubmit;
-
-  const _CreateArticleSheet({required this.onSubmit});
-
-  @override
-  State<_CreateArticleSheet> createState() => _CreateArticleSheetState();
-}
-
-class _CreateArticleSheetState extends State<_CreateArticleSheet> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _nameCtrl;
-  ArticleCategory? _category;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameCtrl = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        24,
-        16,
-        MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Créer un article', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(labelText: 'Nom'),
-              validator: (v) => v == null || v.trim().isEmpty ? 'Nom requis' : null,
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<ArticleCategory>(
-              value: _category,
-              decoration: const InputDecoration(labelText: 'Catégorie'),
-              items: ArticleCategory.values
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c.name)))
-                  .toList(),
-              onChanged: (v) => setState(() => _category = v),
-              validator: (v) => v == null ? 'Catégorie requise' : null,
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: () async {
-                if (!_formKey.currentState!.validate()) return;
-                final cat = _category!;
-                Navigator.of(context).pop();
-                await widget.onSubmit(_nameCtrl.text.trim(), cat);
-              },
-              child: const Text('Créer'),
             ),
           ],
         ),

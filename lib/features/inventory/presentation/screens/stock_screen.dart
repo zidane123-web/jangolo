@@ -1,13 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../data/datasources/inventory_remote_datasource.dart';
 import '../../data/models/article_detail_data.dart';
 import '../../data/repositories/inventory_repository_impl.dart';
 import '../../domain/entities/article_entity.dart';
+import '../../domain/usecases/add_article.dart';
 import '../../domain/usecases/get_articles.dart';
 import 'article_detail_screen.dart';
+import 'create_article_screen.dart';
 
 class StockScreen extends StatefulWidget {
   final VoidCallback? onViewed;
@@ -20,6 +23,7 @@ class StockScreen extends StatefulWidget {
 class _StockScreenState extends State<StockScreen>
     with AutomaticKeepAliveClientMixin {
   late final GetArticles _getArticles;
+  late final AddArticle _addArticle;
   Future<String?>? _organizationIdFuture;
 
   ArticleCategory? _filter;
@@ -32,6 +36,7 @@ class _StockScreenState extends State<StockScreen>
     final repository =
         InventoryRepositoryImpl(remoteDataSource: remoteDataSource);
     _getArticles = GetArticles(repository);
+    _addArticle = AddArticle(repository); // Initialisation pour la création
 
     _organizationIdFuture = _getOrganizationId();
     WidgetsBinding.instance.addPostFrameCallback((_) => widget.onViewed?.call());
@@ -69,7 +74,7 @@ class _StockScreenState extends State<StockScreen>
               icon: const Icon(Icons.qr_code_scanner)),
           IconButton(
               tooltip: 'Ajouter un article',
-              onPressed: () {},
+              onPressed: _onCreateArticle, // Action pour créer un article
               icon: const Icon(Icons.add_circle_outline)),
         ],
       ),
@@ -201,18 +206,13 @@ class _StockScreenState extends State<StockScreen>
                   title: Text(it.name,
                       style: textTheme.titleMedium
                           ?.copyWith(fontWeight: FontWeight.w600)),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      '${_catName(it.category)} • Achat: ${_money(it.buyPrice)}',
-                      style: textTheme.bodySmall?.copyWith(color: cs.outline),
-                    ),
-                  ),
+                  // ✅ Le sous-titre a été supprimé
                   trailing: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text(_money(it.sellPrice),
+                      // ✅ Le prix affiché est maintenant le CUMP (buyPrice)
+                      Text(_money(it.buyPrice),
                           style: textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w700)),
                       const SizedBox(height: 6),
@@ -249,6 +249,19 @@ class _StockScreenState extends State<StockScreen>
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Scanner à implémenter')));
 
+  Future<void> _onCreateArticle() async {
+    final organizationId = await _organizationIdFuture;
+    if (organizationId == null || !mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CreateArticleScreen(
+          addArticle: _addArticle,
+          organizationId: organizationId,
+        ),
+      ),
+    );
+  }
+
   Route _slideFromRight(Widget page) {
     return PageRouteBuilder(
       pageBuilder: (context, animation, secondaryAnimation) => page,
@@ -284,10 +297,13 @@ class _StockScreenState extends State<StockScreen>
   List<ArticleEntity> _byCat(List<ArticleEntity> all, ArticleCategory c) =>
       all.where((a) => a.category == c).toList();
 
-  String _money(double v) => '${v.toStringAsFixed(2)} €';
+  String _money(double v) =>
+      NumberFormat.currency(locale: 'fr_FR', symbol: 'F', decimalDigits: 0)
+          .format(v);
+          
   String _shortMoney(double v) {
-    if (v >= 1e6) return '${(v / 1e6).toStringAsFixed(1)} M€';
-    if (v >= 1e3) return '${(v / 1e3).toStringAsFixed(1)} k€';
+    if (v >= 1e6) return '${(v / 1e6).toStringAsFixed(1)} M F';
+    if (v >= 1e3) return '${(v / 1e3).toStringAsFixed(1)} k F';
     return _money(v);
   }
 
@@ -507,5 +523,5 @@ class _FilterSummary extends StatelessWidget {
       ),
     );
   }
-  String _money(double v) => '${v.toStringAsFixed(2)} €';
+  String _money(double v) => NumberFormat.currency(locale: 'fr_FR', symbol: 'F', decimalDigits: 0).format(v);
 }

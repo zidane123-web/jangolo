@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:jangolo/src/screens/search_screen.dart';
 import 'package:jangolo/src/screens/home_shell.dart';
-import 'package:jangolo/src/screens/stock_screen.dart';
+// ✅ L'IMPORT A ÉTÉ MIS À JOUR ICI
+import 'package:jangolo/features/inventory/presentation/screens/stock_screen.dart';
 import 'package:jangolo/src/screens/notifications_screen.dart';
-// ➜ L'IMPORT A ÉTÉ MIS À JOUR ICI
 import 'package:jangolo/features/purchases/presentation/screens/purchases_list_screen.dart';
 
 class MainNavShell extends StatefulWidget {
@@ -19,14 +19,13 @@ class _MainNavShellState extends State<MainNavShell> {
   late final List<Widget> _screens = <Widget>[
     const HomeShell(),
     const SearchScreen(),
-    const StockScreen(),
-    const PurchasesListScreen(), // ✅ nouvel onglet Achats
+    const StockScreen(), // ✅ Maintenant, ceci utilise la bonne version de l'écran
+    const PurchasesListScreen(),
     const NotificationsScreen(),
   ];
 
   void _onItemTapped(int index) => setState(() => _selectedIndex = index);
 
-  // CORRECTION 1 : @Override remplacé par @override
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -36,7 +35,6 @@ class _MainNavShellState extends State<MainNavShell> {
       bottomNavigationBar: NavigationBar(
         height: 68,
         backgroundColor: cs.surface,
-        // CORRECTION 2 : .withOpacity(0.4) remplacé par .withAlpha(102)
         indicatorColor: cs.primaryContainer.withAlpha(102),
         surfaceTintColor: Colors.transparent,
         selectedIndex: _selectedIndex,

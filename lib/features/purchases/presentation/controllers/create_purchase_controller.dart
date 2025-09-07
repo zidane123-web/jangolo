@@ -104,21 +104,8 @@ class CreatePurchaseController {
     );
 
     await _firestore.runTransaction((transaction) async {
-      final purchaseRef = _firestore
-          .collection('organisations')
-          .doc(organizationId)
-          .collection('purchases')
-          .doc(purchaseEntity.id);
-
-      final purchaseModel = PurchaseModel.fromEntity(purchaseEntity);
-      transaction.set(purchaseRef, purchaseModel.toJson());
-
-      for (final item in purchaseEntity.items) {
-        final itemRef = purchaseRef.collection('items').doc(item.id);
-        final itemModel = PurchaseLineModel.fromEntity(item);
-        transaction.set(itemRef, itemModel.toJson());
-      }
-
+      // ✅ --- ÉTAPE 1: LECTURES D'ABORD ---
+      final List<DocumentSnapshot> articleSnapshots = [];
       if (isReceived && approve) {
         for (final lineItem in items) {
           if (lineItem.sku == null || lineItem.sku!.isEmpty) continue;
@@ -129,11 +116,48 @@ class CreatePurchaseController {
               .collection('inventory')
               .doc(lineItem.sku!);
 
+          // On lit tous les articles nécessaires D'ABORD.
           final articleSnapshot = await transaction.get(articleRef);
           if (!articleSnapshot.exists) {
             throw Exception('Article avec SKU ${lineItem.sku} non trouvé.');
           }
-          final oldArticle = ArticleModel.fromSnapshot(articleSnapshot);
+          articleSnapshots.add(articleSnapshot);
+        }
+      }
+
+      // ✅ --- ÉTAPE 2: ÉCRITURES ENSUITE ---
+
+      // 2a. Écriture du bon de commande
+      final purchaseRef = _firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('purchases')
+          .doc(purchaseEntity.id);
+
+      final purchaseModel = PurchaseModel.fromEntity(purchaseEntity);
+      transaction.set(purchaseRef, purchaseModel.toJson());
+
+      // 2b. Écriture des lignes d'articles
+      for (final item in purchaseEntity.items) {
+        final itemRef = purchaseRef.collection('items').doc(item.id);
+        final itemModel = PurchaseLineModel.fromEntity(item);
+        transaction.set(itemRef, itemModel.toJson());
+      }
+
+      // 2c. Mise à jour du stock (si nécessaire)
+      if (isReceived && approve) {
+        for (int i = 0; i < items.length; i++) {
+          final lineItem = items[i];
+          if (lineItem.sku == null || lineItem.sku!.isEmpty) continue;
+          
+          final articleRef = _firestore
+              .collection('organisations')
+              .doc(organizationId)
+              .collection('inventory')
+              .doc(lineItem.sku!);
+
+          // On utilise le snapshot déjà lu
+          final oldArticle = ArticleModel.fromSnapshot(articleSnapshots[i]);
 
           final oldQty = oldArticle.totalQuantity;
           final oldCost = oldArticle.buyPrice;
@@ -141,8 +165,10 @@ class CreatePurchaseController {
           final newPrice = lineItem.unitPrice;
 
           final newTotalQty = oldQty + newQty;
-          final newWeightedCost =
-              ((oldQty * oldCost) + (newQty * newPrice)) / newTotalQty;
+          // On évite la division par zéro si le stock total devient nul
+          final newWeightedCost = newTotalQty > 0
+              ? ((oldQty * oldCost) + (newQty * newPrice)) / newTotalQty
+              : 0;
 
           transaction.update(articleRef, {
             'totalQuantity': newTotalQty,

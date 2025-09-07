@@ -280,7 +280,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
                                 isSaving: _isSaving,
                                 onBack: _onBack,
                                 onSaveDraft: () => _save(approve: false),
-                                onValidate: () => _save(approve: true)),
+                                onValidate: () => _save(approve: true)), 
                           ]),
           ),
         ),

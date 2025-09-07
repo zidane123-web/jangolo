@@ -1,5 +1,7 @@
 // lib/features/purchases/presentation/screens/purchase_line_edit_screen.dart
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +13,7 @@ import '../../../inventory/data/datasources/inventory_remote_datasource.dart';
 import '../../../inventory/data/repositories/inventory_repository_impl.dart';
 import '../../../inventory/domain/entities/article_entity.dart';
 import '../../../inventory/domain/usecases/add_article.dart';
+import '../../../inventory/domain/usecases/get_articles.dart';
 import '../widgets/create_purchase/form_widgets.dart'; // Pour le PickerField
 
 import '../../domain/entities/purchase_line_entity.dart';
@@ -75,6 +78,9 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   // --- FIN MODIFICATION ---
 
   late final AddArticle _addArticle;
+  late final GetArticles _getArticles;
+  StreamSubscription<List<ArticleEntity>>? _articlesSub;
+  String? _organizationId;
 
   late final TextEditingController _unitPrice;
   late DiscountType _discountType = widget.initial?.discountType ?? DiscountType.none;
@@ -83,13 +89,8 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   late final TextEditingController _codesPerItemCtrl = TextEditingController(text: widget.initial?.codesPerItem.toString() ?? '1');
   late List<List<String>> _scannedCodeGroups = widget.initial?.scannedCodeGroups ?? [];
 
-  // ✅ --- NOUVEAU: Liste des articles disponibles ---
-  final List<Article> _availableArticles = [
-    Article(category: ArticleCategory.phones, name: 'iPhone 14 128 Go', sku: 'IP14-128-BLK', buyPrice: 650, sellPrice: 899, qty: 12),
-    Article(category: ArticleCategory.phones, name: 'Samsung Galaxy S23', sku: 'SGS23-128', buyPrice: 540, sellPrice: 799, qty: 9),
-    Article(category: ArticleCategory.accessories, name: 'Coque Silicone (iPhone 14)', sku: 'CASE-IP14-SIL', buyPrice: 4.2, sellPrice: 12.9, qty: 140),
-    Article(category: ArticleCategory.tablets, name: 'iPad 10e Gen 64 Go', sku: 'IPAD10-64', buyPrice: 340, sellPrice: 499, qty: 7),
-  ];
+  // ✅ Liste des articles disponibles chargés depuis Firestore
+  final List<Article> _availableArticles = [];
 
   @override
   void initState() {
@@ -97,24 +98,46 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
     final remoteDataSource = InventoryRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
     final repository = InventoryRepositoryImpl(remoteDataSource: remoteDataSource);
     _addArticle = AddArticle(repository);
-    // Si on est en mode édition, on cherche l'article correspondant pour pré-remplir
-    if (widget.initial != null) {
-      try {
-        _selectedArticle = _availableArticles.firstWhere((a) => a.name == widget.initial!.name);
-      } catch (e) {
-        _selectedArticle = null;
-      }
-    }
-    _unitPrice = TextEditingController(text: _fmtNum(widget.initial?.unitPrice ?? _selectedArticle?.buyPrice ?? 0));
+    _getArticles = GetArticles(repository);
+
+    _unitPrice = TextEditingController(text: _fmtNum(widget.initial?.unitPrice ?? 0));
+
+    _setupArticlesStream();
   }
 
   @override
   void dispose() {
+    _articlesSub?.cancel();
     _unitPrice.dispose();
     _discountValue.dispose();
     _vatRate.dispose();
     _codesPerItemCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _setupArticlesStream() async {
+    final orgId = await _getOrganizationId();
+    _organizationId = orgId;
+    _articlesSub = _getArticles(orgId).listen((entities) {
+      setState(() {
+        _availableArticles
+          ..clear()
+          ..addAll(entities.map((e) => Article(
+                category: e.category,
+                name: e.name,
+                sku: e.id,
+                buyPrice: e.buyPrice,
+                sellPrice: e.sellPrice,
+                qty: e.totalQuantity,
+              )));
+      });
+      if (widget.initial != null && _selectedArticle == null) {
+        try {
+          _selectedArticle = _availableArticles.firstWhere((a) => a.name == widget.initial!.name);
+          _unitPrice.text = _fmtNum(widget.initial!.unitPrice);
+        } catch (_) {}
+      }
+    });
   }
 
 
@@ -134,7 +157,7 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   }
 
   Future<void> _createArticle(String name, ArticleCategory category) async {
-    final orgId = await _getOrganizationId();
+    final orgId = _organizationId ?? await _getOrganizationId();
     final entity = ArticleEntity(
       id: '',
       name: name,
@@ -154,9 +177,6 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
       sellPrice: created.sellPrice,
       qty: created.totalQuantity,
     );
-    setState(() {
-      _availableArticles.add(article);
-    });
     _onArticleSelected(article);
   }
   

@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/article_detail_data.dart';
-import '../../data/models/movement.dart';
 import 'movements_page.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../domain/entities/movement_entity.dart';
+import '../../data/datasources/inventory_remote_datasource.dart';
+import '../../data/repositories/inventory_repository_impl.dart';
+import '../../domain/usecases/get_movements.dart';
 
 class ArticleDetailScreen extends StatefulWidget {
   final ArticleDetailData article;
@@ -291,83 +296,84 @@ class _MovementsTab extends StatelessWidget {
   final ArticleDetailData article;
   const _MovementsTab({required this.article});
 
-  @override
-  Widget build(BuildContext context) {
-    final movements = _fakeMovements();
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      children: [
-        Row(
-          children: [
-            const Expanded(child: _SectionTitle(title: 'Derniers Mouvements')),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => MovementListScreen(
-                      articleName: article.name,
-                      sku: article.sku,
-                      allMovements: _toMovementItems(movements),
-                    ),
-                  ),
-                );
-              },
-              child: const Text('Voir tout'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (movements.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 32.0),
-            child: Center(child: Text('Aucun mouvement enregistré.')),
-          )
-        else
-          ...movements.map((m) => _MovementTile(m: m)),
-      ],
-    );
+  Future<String> _getOrganizationId() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Utilisateur non authentifié.');
+    final doc = await FirebaseFirestore.instance
+        .collection('utilisateurs')
+        .doc(user.uid)
+        .get();
+    final orgId = doc.data()?['organizationId'] as String?;
+    if (orgId == null) throw Exception('Organisation non trouvée.');
+    return orgId;
   }
 
-  // --- Données et logique des mouvements ---
-  List<_LocalMovement> _fakeMovements() => [
-        _LocalMovement(
-            type: _MoveType.out,
-            qty: 3,
-            date: DateTime.now().subtract(const Duration(days: 1)),
-            reason: 'Vente POS #1052'),
-        _LocalMovement(
-            type: _MoveType.inn,
-            qty: 10,
-            date: DateTime.now().subtract(const Duration(days: 4)),
-            reason: 'Réception PO-784'),
-        _LocalMovement(
-            type: _MoveType.adjust,
-            qty: -1,
-            date: DateTime.now().subtract(const Duration(days: 6)),
-            reason: 'Inventaire'),
-        _LocalMovement(
-            type: _MoveType.out,
-            qty: 2,
-            date: DateTime.now().subtract(const Duration(days: 8)),
-            reason: 'Vente POS #1038'),
-      ];
+  @override
+  Widget build(BuildContext context) {
+    final getMovements = GetMovements(
+      InventoryRepositoryImpl(
+        remoteDataSource:
+            InventoryRemoteDataSourceImpl(firestore: FirebaseFirestore.instance),
+      ),
+    );
 
-  List<MovementItem> _toMovementItems(List<_LocalMovement> ms) {
-    return ms
-        .map(
-          (m) => MovementItem(
-            type: switch (m.type) {
-              _MoveType.inn => MoveType.inn,
-              _MoveType.out => MoveType.out,
-              _MoveType.adjust => MoveType.adjust,
-            },
-            qty: m.qty,
-            date: m.date,
-            reason: m.reason,
-          ),
-        )
-        .toList();
+    return FutureBuilder<String>(
+      future: _getOrganizationId(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Erreur: ${snapshot.error}'));
+          }
+          return const Center(child: CircularProgressIndicator());
+        }
+        final orgId = snapshot.data!;
+        return StreamBuilder<List<MovementEntity>>(
+          stream: getMovements(orgId, article.sku),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              if (snapshot.hasError) {
+                return Center(child: Text('Erreur: ${snapshot.error}'));
+              }
+              return const Center(child: CircularProgressIndicator());
+            }
+            final movements = snapshot.data!;
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                        child: _SectionTitle(title: 'Derniers Mouvements')),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => MovementListScreen(
+                              articleName: article.name,
+                              sku: article.sku,
+                              articleId: article.sku,
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Text('Voir tout'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (movements.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32.0),
+                    child: Center(child: Text('Aucun mouvement enregistré.')),
+                  )
+                else
+                  ...movements.map((m) => _MovementTile(m: m)),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 }
 
@@ -628,21 +634,16 @@ class _SalesMiniChartPlaceholder extends StatelessWidget {
 }
 
 class _MovementTile extends StatelessWidget {
-  final _LocalMovement m;
+  final MovementEntity m;
   const _MovementTile({required this.m});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final icon = switch (m.type) {
-      _MoveType.inn => Icons.north_east_rounded,
-      _MoveType.out => Icons.south_west_rounded,
-      _ => Icons.compare_arrows_rounded,
-    };
-    final color = switch (m.type) {
-      _MoveType.inn => Colors.green,
-      _MoveType.out => Colors.red,
-      _ => Colors.blueGrey,
+    final (icon, color) = switch (m.type) {
+      MovementType.inn => (Icons.north_east_rounded, Colors.green),
+      MovementType.out => (Icons.south_west_rounded, Colors.red),
+      MovementType.adjust => (Icons.compare_arrows_rounded, Colors.blueGrey),
     };
 
     return Container(
@@ -661,8 +662,9 @@ class _MovementTile extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
               Text('${m.qty > 0 ? '+' : ''}${m.qty} • ${_fmtDate(m.date)}'),
               const SizedBox(height: 2),
               Text(m.reason,
@@ -679,21 +681,6 @@ class _MovementTile extends StatelessWidget {
 
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-}
-
-// ===== Modèles fictifs internes
-enum _MoveType { inn, out, adjust }
-
-class _LocalMovement {
-  final _MoveType type;
-  final int qty;
-  final DateTime date;
-  final String reason;
-  const _LocalMovement(
-      {required this.type,
-      required this.qty,
-      required this.date,
-      required this.reason});
 }
 
 class _SalesSummary {

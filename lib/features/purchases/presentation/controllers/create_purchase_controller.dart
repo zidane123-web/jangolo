@@ -15,6 +15,10 @@ import '../../domain/entities/purchase_line_entity.dart';
 import '../models/payment_view_model.dart';
 import '../models/reception_status_choice.dart';
 import '../screens/purchase_line_edit_screen.dart' show LineItem;
+import '../../../inventory/data/datasources/inventory_remote_datasource.dart';
+import '../../../inventory/data/repositories/inventory_repository_impl.dart';
+import '../../../inventory/domain/entities/movement_entity.dart';
+import '../../../inventory/domain/usecases/add_movement.dart';
 
 /// Bundles initial data needed to create a purchase.
 class InitialPurchaseData {
@@ -37,6 +41,8 @@ class CreatePurchaseController {
   late final GetPaymentMethods _getPaymentMethods;
   late final AddSupplier _addSupplier;
   late final AddWarehouse _addWarehouse;
+  late final InventoryRepositoryImpl _inventoryRepository;
+  late final AddMovement _addMovement;
 
   CreatePurchaseController() {
     _firestore = FirebaseFirestore.instance;
@@ -50,6 +56,12 @@ class CreatePurchaseController {
     _getPaymentMethods = GetPaymentMethods(settingsRepository);
     _addSupplier = AddSupplier(settingsRepository);
     _addWarehouse = AddWarehouse(settingsRepository);
+
+    final inventoryRemoteDataSource =
+        InventoryRemoteDataSourceImpl(firestore: _firestore);
+    _inventoryRepository =
+        InventoryRepositoryImpl(remoteDataSource: inventoryRemoteDataSource);
+    _addMovement = AddMovement(_inventoryRepository);
   }
 
   Future<String> _getOrganizationId() async {
@@ -174,6 +186,19 @@ class CreatePurchaseController {
             'totalQuantity': newTotalQty,
             'buyPrice': newWeightedCost,
           });
+
+          final movementId = articleRef.collection('movements').doc().id;
+          final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
+          final movement = MovementEntity(
+            id: movementId,
+            type: MovementType.inn,
+            qty: newQty,
+            date: DateTime.now(),
+            reason: 'Réception Achat #${purchaseEntity.id}',
+            userId: userId,
+            sourceDocument: purchaseEntity.id,
+          );
+          await _addMovement(organizationId, lineItem.sku!, movement);
         }
       }
     });

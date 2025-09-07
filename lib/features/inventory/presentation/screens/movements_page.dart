@@ -1,58 +1,116 @@
 import 'package:flutter/material.dart';
-import '../../data/models/movement.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../domain/entities/movement_entity.dart';
+import '../../data/datasources/inventory_remote_datasource.dart';
+import '../../data/repositories/inventory_repository_impl.dart';
+import '../../domain/usecases/get_movements.dart';
 
 class MovementListScreen extends StatelessWidget {
   final String articleName;
   final String sku;
-  final List<MovementItem> allMovements;
+  final String articleId;
 
   const MovementListScreen({
     super.key,
     required this.articleName,
     required this.sku,
-    required this.allMovements,
+    required this.articleId,
   });
+
+  Future<String> _getOrganizationId() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Utilisateur non authentifié.');
+    final doc = await FirebaseFirestore.instance
+        .collection('utilisateurs')
+        .doc(user.uid)
+        .get();
+    final orgId = doc.data()?['organizationId'] as String?;
+    if (orgId == null) throw Exception('Organisation non trouvée.');
+    return orgId;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final today = DateTime.now();
-    final todays = allMovements.where((m) => _isSameDay(m.date, today)).toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-
-    final sums = _DaySums.from(todays);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Mouvements'),
-            Text(
-              '$articleName • SKU: $sku',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
+    final getMovements = GetMovements(
+      InventoryRepositoryImpl(
+        remoteDataSource:
+            InventoryRemoteDataSourceImpl(firestore: FirebaseFirestore.instance),
       ),
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          children: [
-            _KpiRow(sums: sums),
-            const SizedBox(height: 12),
-            if (todays.isEmpty)
-              _EmptyToday()
-            else
-              Expanded(
-                child: ListView.separated(
-                  itemCount: todays.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) => _MovementRow(m: todays[index]),
+    );
+
+    return FutureBuilder<String>(
+      future: _getOrganizationId(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          if (snapshot.hasError) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('Mouvements')),
+              body: Center(child: Text('Erreur: ${snapshot.error}')),
+            );
+          }
+          return Scaffold(
+            appBar: AppBar(title: const Text('Mouvements')),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+        final orgId = snapshot.data!;
+        return StreamBuilder<List<MovementEntity>>(
+          stream: getMovements(orgId, articleId),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              if (snapshot.hasError) {
+                return Center(child: Text('Erreur: ${snapshot.error}'));
+              }
+              return const Center(child: CircularProgressIndicator());
+            }
+            final allMovements = snapshot.data!;
+            final today = DateTime.now();
+            final todays = allMovements
+                .where((m) => _isSameDay(m.date, today))
+                .toList()
+              ..sort((a, b) => b.date.compareTo(a.date));
+
+            final sums = _DaySums.from(todays);
+
+            return Scaffold(
+              appBar: AppBar(
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Mouvements'),
+                    Text(
+                      '$articleName • SKU: $sku',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
               ),
-          ],
-        ),
-      ),
+              body: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  children: [
+                    _KpiRow(sums: sums),
+                    const SizedBox(height: 12),
+                    if (todays.isEmpty)
+                      _EmptyToday()
+                    else
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: todays.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
+                          itemBuilder: (context, index) =>
+                              _MovementRow(m: todays[index]),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -68,17 +126,17 @@ class _DaySums {
 
   _DaySums({required this.inn, required this.out, required this.adjust});
 
-  factory _DaySums.from(List<MovementItem> items) {
+  factory _DaySums.from(List<MovementEntity> items) {
     var i = 0, o = 0, adj = 0;
     for (final m in items) {
       switch (m.type) {
-        case MoveType.inn:
+        case MovementType.inn:
           i += m.qty;
           break;
-        case MoveType.out:
+        case MovementType.out:
           o += m.qty;
           break;
-        case MoveType.adjust:
+        case MovementType.adjust:
           adj += m.qty;
           break;
       }
@@ -130,7 +188,7 @@ class _KpiRow extends StatelessWidget {
 }
 
 class _MovementRow extends StatelessWidget {
-  final MovementItem m;
+  final MovementEntity m;
   const _MovementRow({required this.m});
 
   @override
@@ -138,9 +196,9 @@ class _MovementRow extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     final (icon, color) = switch (m.type) {
-      MoveType.inn => (Icons.north_east_rounded, Colors.green),
-      MoveType.out => (Icons.south_west_rounded, Colors.red),
-      MoveType.adjust => (Icons.compare_arrows_rounded, Colors.blueGrey),
+      MovementType.inn => (Icons.north_east_rounded, Colors.green),
+      MovementType.out => (Icons.south_west_rounded, Colors.red),
+      MovementType.adjust => (Icons.compare_arrows_rounded, Colors.blueGrey),
     };
 
     String hhmm(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';

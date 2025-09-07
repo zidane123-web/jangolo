@@ -1,6 +1,8 @@
 // lib/features/inventory/data/models/article.dart
 
-// Modèle pour les données d'un article, maintenant réutilisable.
+import '../../domain/entities/article_entity.dart';
+
+// Simplified model for purchase flows.
 class Article {
   final ArticleCategory category;
   final String name;
@@ -18,6 +20,3 @@ class Article {
     required this.qty,
   });
 }
-
-// Enum pour les catégories, maintenant réutilisable.
-enum ArticleCategory { phones, accessories, tablets, wearables }

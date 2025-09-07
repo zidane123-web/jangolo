@@ -1,6 +1,7 @@
 import '../../domain/entities/article_entity.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../datasources/inventory_remote_datasource.dart';
+import '../models/article_model.dart';
 
 class InventoryRepositoryImpl implements InventoryRepository {
   final InventoryRemoteDataSource remoteDataSource;
@@ -12,5 +13,11 @@ class InventoryRepositoryImpl implements InventoryRepository {
     return remoteDataSource.getArticles(organizationId).map((models) {
       return models.map((m) => m as ArticleEntity).toList();
     });
+  }
+
+  @override
+  Future<ArticleEntity> addArticle(String organizationId, ArticleEntity article) {
+    final model = ArticleModel.fromEntity(article);
+    return remoteDataSource.addArticle(organizationId, model);
   }
 }

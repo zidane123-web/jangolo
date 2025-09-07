@@ -34,4 +34,29 @@ class ArticleModel extends ArticleEntity {
       createdAt: (data['createdAt'] as Timestamp? ?? Timestamp.now()).toDate(),
     );
   }
+
+  factory ArticleModel.fromEntity(ArticleEntity entity) {
+    return ArticleModel(
+      id: entity.id,
+      name: entity.name,
+      category: entity.category,
+      buyPrice: entity.buyPrice,
+      sellPrice: entity.sellPrice,
+      hasSerializedUnits: entity.hasSerializedUnits,
+      totalQuantity: entity.totalQuantity,
+      createdAt: entity.createdAt,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'category': category.name,
+      'buyPrice': buyPrice,
+      'sellPrice': sellPrice,
+      'hasSerializedUnits': hasSerializedUnits,
+      'totalQuantity': totalQuantity,
+      'createdAt': Timestamp.fromDate(createdAt),
+    };
+  }
 }

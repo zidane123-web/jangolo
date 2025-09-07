@@ -3,11 +3,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-// ✅ --- NOUVEAUX IMPORTS ---
 import '../../../inventory/data/models/article.dart';
+import '../../../inventory/data/datasources/inventory_remote_datasource.dart';
+import '../../../inventory/data/repositories/inventory_repository_impl.dart';
+import '../../../inventory/domain/entities/article_entity.dart';
+import '../../../inventory/domain/usecases/add_article.dart';
 import '../widgets/create_purchase/form_widgets.dart'; // Pour le PickerField
-// --- FIN DES NOUVEAUX IMPORTS ---
 
 import '../../domain/entities/purchase_line_entity.dart';
 import 'qr_scanner_screen.dart';
@@ -70,6 +74,8 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   Article? _selectedArticle;
   // --- FIN MODIFICATION ---
 
+  late final AddArticle _addArticle;
+
   late final TextEditingController _unitPrice;
   late DiscountType _discountType = widget.initial?.discountType ?? DiscountType.none;
   late final TextEditingController _discountValue = TextEditingController(text: _fmtNum(widget.initial?.discountValue ?? 0));
@@ -78,7 +84,7 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   late List<List<String>> _scannedCodeGroups = widget.initial?.scannedCodeGroups ?? [];
 
   // ✅ --- NOUVEAU: Liste des articles disponibles ---
-  final List<Article> _availableArticles = const [
+  final List<Article> _availableArticles = [
     Article(category: ArticleCategory.phones, name: 'iPhone 14 128 Go', sku: 'IP14-128-BLK', buyPrice: 650, sellPrice: 899, qty: 12),
     Article(category: ArticleCategory.phones, name: 'Samsung Galaxy S23', sku: 'SGS23-128', buyPrice: 540, sellPrice: 799, qty: 9),
     Article(category: ArticleCategory.accessories, name: 'Coque Silicone (iPhone 14)', sku: 'CASE-IP14-SIL', buyPrice: 4.2, sellPrice: 12.9, qty: 140),
@@ -88,6 +94,9 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   @override
   void initState() {
     super.initState();
+    final remoteDataSource = InventoryRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
+    final repository = InventoryRepositoryImpl(remoteDataSource: remoteDataSource);
+    _addArticle = AddArticle(repository);
     // Si on est en mode édition, on cherche l'article correspondant pour pré-remplir
     if (widget.initial != null) {
       try {
@@ -114,6 +123,42 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
     final clean = v.replaceAll(' ', '').replaceAll(',', '.');
     return num.tryParse(clean) ?? 0;
   }
+
+  Future<String> _getOrganizationId() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception("Utilisateur non authentifié.");
+    final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
+    final orgId = userDoc.data()?['organizationId'] as String?;
+    if (orgId == null) throw Exception("Organisation non trouvée.");
+    return orgId;
+  }
+
+  Future<void> _createArticle(String name, ArticleCategory category) async {
+    final orgId = await _getOrganizationId();
+    final entity = ArticleEntity(
+      id: '',
+      name: name,
+      category: category,
+      buyPrice: 0,
+      sellPrice: 0,
+      hasSerializedUnits: false,
+      totalQuantity: 0,
+      createdAt: DateTime.now(),
+    );
+    final created = await _addArticle(orgId, entity);
+    final article = Article(
+      category: created.category,
+      name: created.name,
+      sku: created.id,
+      buyPrice: created.buyPrice,
+      sellPrice: created.sellPrice,
+      qty: created.totalQuantity,
+    );
+    setState(() {
+      _availableArticles.add(article);
+    });
+    _onArticleSelected(article);
+  }
   
   // ✅ --- NOUVEAU: Logique pour afficher le sélecteur d'articles ---
   void _showArticlePicker() {
@@ -127,9 +172,9 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
       ),
       showDragHandle: true,
       builder: (context) {
+        String searchQuery = '';
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
-            String searchQuery = '';
             final filteredItems = _availableArticles
                 .where((item) => item.name.toLowerCase().contains(searchQuery.toLowerCase()))
                 .toList();
@@ -158,41 +203,127 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Expanded(
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: filteredItems.length,
-                        itemBuilder: (context, index) {
-                          final item = filteredItems[index];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              border: Border.all(color: theme.colorScheme.outlineVariant.withAlpha(153)),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                radius: 18,
-                                backgroundColor: theme.colorScheme.primary.withAlpha(25),
-                                child: const Icon(Icons.inventory_2_outlined, size: 20),
+                    if (filteredItems.isEmpty)
+                      Expanded(
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Aucun article trouvé.'),
+                              const SizedBox(height: 12),
+                              FilledButton(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _showCreateArticleSheet();
+                                },
+                                child: const Text('Créer un article'),
                               ),
-                              title: Text(item.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                              subtitle: Text("Prix d'achat: ${_fmtNum(item.buyPrice)} ${widget.currency}"),
-                              onTap: () {
-                                _onArticleSelected(item);
-                                Navigator.pop(context);
-                              },
-                            ),
-                          );
-                        },
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: filteredItems.length,
+                          itemBuilder: (context, index) {
+                            final item = filteredItems[index];
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                border: Border.all(color: theme.colorScheme.outlineVariant.withAlpha(153)),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: theme.colorScheme.primary.withAlpha(25),
+                                  child: const Icon(Icons.inventory_2_outlined, size: 20),
+                                ),
+                                title: Text(item.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                                subtitle: Text("Prix d'achat: ${_fmtNum(item.buyPrice)} ${widget.currency}"),
+                                onTap: () {
+                                  _onArticleSelected(item);
+                                  Navigator.pop(context);
+                                },
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  void _showCreateArticleSheet() {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      showDragHandle: true,
+      builder: (context) {
+        final nameCtrl = TextEditingController();
+        final formKey = GlobalKey<FormState>();
+        ArticleCategory? category;
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 24,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              return Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Créer un article', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(labelText: 'Nom'),
+                      validator: (v) => v == null || v.trim().isEmpty ? 'Nom requis' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<ArticleCategory>(
+                      value: category,
+                      decoration: const InputDecoration(labelText: 'Catégorie'),
+                      items: ArticleCategory.values
+                          .map((c) => DropdownMenuItem(value: c, child: Text(c.name)))
+                          .toList(),
+                      onChanged: (v) => setState(() => category = v),
+                      validator: (v) => v == null ? 'Catégorie requise' : null,
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      onPressed: () async {
+                        if (!formKey.currentState!.validate()) return;
+                        final cat = category!;
+                        Navigator.pop(context);
+                        await _createArticle(nameCtrl.text.trim(), cat);
+                      },
+                      child: const Text('Créer'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         );
       },
     );

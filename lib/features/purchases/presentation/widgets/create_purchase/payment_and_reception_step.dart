@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:jangolo/features/purchases/presentation/screens/create_purchase_screen.dart';
+import 'package:jangolo/features/purchases/presentation/models/reception_status_choice.dart';
 import '../../models/payment_view_model.dart';
 
 class PaymentAndReceptionStep extends StatelessWidget {

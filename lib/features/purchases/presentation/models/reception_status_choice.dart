@@ -1,0 +1,1 @@
+enum ReceptionStatusChoice { toReceive, alreadyReceived }

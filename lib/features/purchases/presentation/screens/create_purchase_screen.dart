@@ -26,13 +26,11 @@ import '../../domain/entities/purchase_entity.dart';
 import '../../domain/entities/purchase_line_entity.dart';
 import 'purchase_line_edit_screen.dart';
 import '../models/payment_view_model.dart';
+import '../models/reception_status_choice.dart';
 import '../widgets/create_purchase/supplier_info_form.dart';
 import '../widgets/create_purchase/line_items_section.dart';
 import '../widgets/create_purchase/purchase_summary_card.dart';
 import '../widgets/create_purchase/payment_and_reception_step.dart';
-
-
-enum ReceptionStatusChoice { toReceive, alreadyReceived }
 
 class CreatePurchaseScreen extends StatefulWidget {
   const CreatePurchaseScreen({super.key});

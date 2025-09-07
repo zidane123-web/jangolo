@@ -20,4 +20,26 @@ class ArticleEntity {
     required this.totalQuantity,
     required this.createdAt,
   });
+
+  ArticleEntity copyWith({
+    String? id,
+    String? name,
+    ArticleCategory? category,
+    double? buyPrice,
+    double? sellPrice,
+    bool? hasSerializedUnits,
+    int? totalQuantity,
+    DateTime? createdAt,
+  }) {
+    return ArticleEntity(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      category: category ?? this.category,
+      buyPrice: buyPrice ?? this.buyPrice,
+      sellPrice: sellPrice ?? this.sellPrice,
+      hasSerializedUnits: hasSerializedUnits ?? this.hasSerializedUnits,
+      totalQuantity: totalQuantity ?? this.totalQuantity,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 }

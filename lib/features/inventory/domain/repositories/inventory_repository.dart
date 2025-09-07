@@ -6,4 +6,10 @@ abstract class InventoryRepository {
 
   /// Creates a new article for the organization and returns the created entity.
   Future<ArticleEntity> addArticle(String organizationId, ArticleEntity article);
+
+  /// Fetches a single article by its SKU (ID).
+  Future<ArticleEntity?> getArticleBySku(String organizationId, String sku);
+
+  /// Updates an existing article's data.
+  Future<void> updateArticle(String organizationId, ArticleEntity article);
 }

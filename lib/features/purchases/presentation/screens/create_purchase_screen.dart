@@ -1,38 +1,23 @@
 // lib/features/purchases/presentation/screens/create_purchase_screen.dart
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 // --- IMPORTS DE L'ARCHITECTURE ---
-import '../../data/datasources/remote_datasource.dart';
-import '../../data/repositories/purchase_repository_impl.dart';
-import '../../domain/usecases/create_purchase.dart';
-
-import '../../../settings/data/datasources/settings_remote_datasource.dart';
-import '../../../settings/data/repositories/settings_repository_impl.dart';
 import '../../../settings/domain/entities/management_entities.dart';
-import '../../../settings/domain/usecases/add_supplier.dart';
-import '../../../settings/domain/usecases/add_warehouse.dart';
-import '../../../settings/domain/usecases/get_management_data.dart';
 import '../../../settings/presentation/screens/add_edit_warehouse_screen.dart';
 import '../../../settings/presentation/screens/add_supplier_screen.dart';
 
+// --- LOGIQUE DU FORMULAIRE ---
+import '../controllers/create_purchase_controller.dart';
 
 // --- IMPORTS DE L'UI ---
-import '../../domain/entities/payment_entity.dart';
-import '../../domain/entities/purchase_entity.dart';
-import '../../domain/entities/purchase_line_entity.dart';
 import 'purchase_line_edit_screen.dart';
 import '../models/payment_view_model.dart';
 import '../widgets/create_purchase/supplier_info_form.dart';
 import '../widgets/create_purchase/line_items_section.dart';
 import '../widgets/create_purchase/purchase_summary_card.dart';
 import '../widgets/create_purchase/payment_and_reception_step.dart';
-
-
-enum ReceptionStatusChoice { toReceive, alreadyReceived }
 
 class CreatePurchaseScreen extends StatefulWidget {
   const CreatePurchaseScreen({super.key});
@@ -67,70 +52,39 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
   bool _isSaving = false;
   
   // --- Instances pour la logique métier ---
-  late final CreatePurchase _createPurchase;
-  late final GetSuppliers _getSuppliers;
-  late final GetWarehouses _getWarehouses;
-  late final GetPaymentMethods _getPaymentMethods;
-  late final AddSupplier _addSupplier;
-  late final AddWarehouse _addWarehouse;
+  late final CreatePurchaseController _controller;
+  late final DateTime _initialOrderDate;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
-    
-    // --- Injection des dépendances (simplifiée) ---
-    final purchaseRemoteDataSource = PurchaseRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
-    final purchaseRepository = PurchaseRepositoryImpl(remoteDataSource: purchaseRemoteDataSource);
-    _createPurchase = CreatePurchase(purchaseRepository);
-
-    final settingsRemoteDataSource = SettingsRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
-    final settingsRepository = SettingsRepositoryImpl(remoteDataSource: settingsRemoteDataSource);
-    _getSuppliers = GetSuppliers(settingsRepository);
-    _getWarehouses = GetWarehouses(settingsRepository);
-    _getPaymentMethods = GetPaymentMethods(settingsRepository);
-    _addSupplier = AddSupplier(settingsRepository);
-    _addWarehouse = AddWarehouse(settingsRepository);
-
+    _initialOrderDate = _orderDate;
+    _controller = CreatePurchaseController();
 
     // --- Lancement du chargement des données ---
-    _loadInitialData();
+    _fetchInitialData();
   }
-  
-  Future<void> _loadInitialData() async {
+
+  Future<void> _fetchInitialData() async {
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception("Utilisateur non authentifié.");
-      
-      final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
-      final organizationId = userDoc.data()?['organizationId'] as String?;
-      if (organizationId == null) throw Exception("Organisation non trouvée.");
-
-      final results = await Future.wait([
-        _getSuppliers(organizationId),
-        _getWarehouses(organizationId),
-        _getPaymentMethods(organizationId),
-      ]);
-      
-      if (mounted) {
-        setState(() {
-          _suppliers = results[0] as List<Supplier>;
-          _warehouses = results[1] as List<Warehouse>;
-          _paymentMethods = results[2] as List<PaymentMethod>;
-
-          if (_warehouses.isNotEmpty) {
-            _warehouse = _warehouses.first;
-          }
-          _isLoading = false;
-        });
-      }
+      final data = await _controller.loadInitialData();
+      if (!mounted) return;
+      setState(() {
+        _suppliers = data.suppliers;
+        _warehouses = data.warehouses;
+        _paymentMethods = data.paymentMethods;
+        if (_warehouses.isNotEmpty) {
+          _warehouse = _warehouses.first;
+        }
+        _isLoading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadingError = "Erreur de chargement: ${e.toString()}";
-          _isLoading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _loadingError = "Erreur de chargement: ${e.toString()}";
+        _isLoading = false;
+      });
     }
   }
 
@@ -146,76 +100,22 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
         _items.isNotEmpty ||
         _payments.isNotEmpty ||
         _receptionChoice != ReceptionStatusChoice.toReceive ||
-        !_orderDate.isAtSameMomentAs(DateTime.now());
+        _orderDate != _initialOrderDate;
   }
 
   Future<void> _save({required bool approve}) async {
     setState(() => _isSaving = true);
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception("Utilisateur non connecté.");
-      final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
-      final organizationId = userDoc.data()?['organizationId'] as String?;
-      if (organizationId == null) throw Exception("Organisation non trouvée.");
-
-      final grandTotal = _items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble());
-      final totalPaid = _payments.fold(0.0, (total, p) => total + p.amount);
-      
-      final List<PaymentEntity> paymentEntities = [];
-      for (var i = 0; i < _payments.length; i++) {
-        final p = _payments[i];
-        final method = _paymentMethods.firstWhere(
-          (m) => m.name == p.method,
-          orElse: () => PaymentMethod(id: '', name: p.method, type: ''),
-        );
-        paymentEntities.add(
-          PaymentEntity(
-            id: 'pay-${DateTime.now().microsecondsSinceEpoch}-$i',
-            amount: p.amount,
-            date: DateTime.now(),
-            paymentMethod: method,
-          ),
-        );
-      }
-
-      final bool isFullyPaid = (grandTotal > 0) && (grandTotal - totalPaid).abs() < 0.01;
-      PurchaseStatus status;
-
-      if (!approve) {
-        status = PurchaseStatus.draft;
-      } else if (_receptionChoice == ReceptionStatusChoice.alreadyReceived && isFullyPaid) {
-        status = PurchaseStatus.paid;
-      } else if (_receptionChoice == ReceptionStatusChoice.alreadyReceived) {
-        status = PurchaseStatus.received;
-      } else {
-        status = PurchaseStatus.approved;
-      }
-
-      final newPurchase = PurchaseEntity(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+      await _controller.savePurchase(
         supplier: _supplier!,
-        status: status,
-        createdAt: _orderDate,
-        eta: _orderDate.add(const Duration(days: 7)),
         warehouse: _warehouse!,
-        payments: paymentEntities,
-        items: _items.asMap().entries.map((entry) {
-          final item = entry.value;
-          final index = entry.key;
-          return PurchaseLineEntity(
-            id: 'line-${DateTime.now().microsecondsSinceEpoch}-$index',
-            name: item.name,
-            sku: item.sku,
-            scannedCodeGroups: item.scannedCodeGroups,
-            unitPrice: item.unitPrice,
-            discountType: DiscountType.values.byName(item.discountType.name),
-            discountValue: item.discountValue,
-            vatRate: item.vatRate,
-          );
-        }).toList(),
+        orderDate: _orderDate,
+        items: _items,
+        payments: _payments,
+        paymentMethods: _paymentMethods,
+        receptionChoice: _receptionChoice,
+        approve: approve,
       );
-
-      await _createPurchase(organizationId: organizationId, purchase: newPurchase);
 
       if (mounted) {
         _snack(approve ? 'Bon d’achat validé !' : 'Brouillon enregistré.');
@@ -223,7 +123,7 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       }
     } catch (e) {
       if (mounted) {
-         _snack('Erreur lors de la sauvegarde: $e', isError: true);
+        _snack('Erreur lors de la sauvegarde: $e', isError: true);
       }
     } finally {
       if (mounted) {
@@ -357,21 +257,8 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
           );
 
           if (newWarehouseResult != null) {
-            final user = FirebaseAuth.instance.currentUser;
-            if (user == null) {
-              _snack("Utilisateur non authentifié.", isError: true);
-              return;
-            }
-            final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
-            final organizationId = userDoc.data()?['organizationId'] as String?;
-            if (organizationId == null) {
-              _snack("Organisation non trouvée.", isError: true);
-              return;
-            }
-
             try {
-              final savedWarehouse = await _addWarehouse(
-                organizationId: organizationId,
+              final savedWarehouse = await _controller.addWarehouse(
                 name: newWarehouseResult.name,
                 address: newWarehouseResult.address,
               );
@@ -401,26 +288,14 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
       },
       actionButton: TextButton(
         onPressed: () async {
-          Navigator.pop(context); 
+          Navigator.pop(context);
           final newSupplierResult = await Navigator.of(context).push<Supplier>(
             MaterialPageRoute(builder: (_) => const AddSupplierScreen()),
           );
-          
+
           if (newSupplierResult != null) {
-            final user = FirebaseAuth.instance.currentUser;
-            if (user == null) {
-              _snack("Utilisateur non authentifié.", isError: true);
-              return;
-            }
-            final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
-            final organizationId = userDoc.data()?['organizationId'] as String?;
-            if (organizationId == null) {
-              _snack("Organisation non trouvée.", isError: true);
-              return;
-            }
             try {
-              final savedSupplier = await _addSupplier(
-                organizationId: organizationId,
+              final savedSupplier = await _controller.addSupplier(
                 name: newSupplierResult.name,
                 phone: newSupplierResult.phone,
               );

@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../inventory/data/models/article.dart';
 import '../../../inventory/data/datasources/inventory_remote_datasource.dart';
@@ -19,6 +19,7 @@ import '../widgets/create_purchase/form_widgets.dart'; // Pour le PickerField
 
 import '../../domain/entities/purchase_line_entity.dart';
 import 'qr_scanner_screen.dart';
+import '../../../../core/providers/auth_providers.dart';
 
 
 class LineItem {
@@ -58,7 +59,7 @@ class LineItem {
   num get lineTotal => lineSubtotal + lineTax;
 }
 
-class PurchaseLineEditScreen extends StatefulWidget {
+class PurchaseLineEditScreen extends ConsumerStatefulWidget {
   final LineItem? initial;
   final String currency;
 
@@ -69,10 +70,10 @@ class PurchaseLineEditScreen extends StatefulWidget {
   });
 
   @override
-  State<PurchaseLineEditScreen> createState() => _PurchaseLineEditScreenState();
+  ConsumerState<PurchaseLineEditScreen> createState() => _PurchaseLineEditScreenState();
 }
 
-class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
+class _PurchaseLineEditScreenState extends ConsumerState<PurchaseLineEditScreen> {
   final _formKey = GlobalKey<FormState>();
 
   // ✅ --- MODIFICATION: Le controller de nom est remplacé par un Article ---
@@ -120,7 +121,8 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
   }
 
   Future<void> _setupArticlesStream() async {
-    final orgId = await _getOrganizationId();
+    final orgId = ref.read(organizationIdProvider).value;
+    if (orgId == null) return;
     _organizationId = orgId;
     _articlesSub = _getArticles(orgId).listen((entities) {
       setState(() {
@@ -154,15 +156,6 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
     final clean = v.replaceAll(' ', '').replaceAll(',', '.');
     return num.tryParse(clean) ?? 0;
   }
-
-  Future<String> _getOrganizationId() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception("Utilisateur non authentifié.");
-    final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
-    final orgId = userDoc.data()?['organizationId'] as String?;
-    if (orgId == null) throw Exception("Organisation non trouvée.");
-    return orgId;
-  }
   
   // ✅ --- NOUVEAU: Logique pour afficher le sélecteur d'articles ---
   void _showArticlePicker() {
@@ -186,7 +179,8 @@ class _PurchaseLineEditScreenState extends State<PurchaseLineEditScreen> {
     }
 
     Future<void> _openCreateArticleScreen() async {
-      final orgId = _organizationId ?? await _getOrganizationId();
+      final orgId = _organizationId ?? ref.read(organizationIdProvider).value;
+      if (orgId == null) return;
       final created = await Navigator.of(context).push<ArticleEntity>(
         MaterialPageRoute(
           builder: (_) => CreateArticleScreen(

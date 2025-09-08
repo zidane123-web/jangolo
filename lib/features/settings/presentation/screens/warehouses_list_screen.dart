@@ -1,8 +1,9 @@
 // lib/features/settings/presentation/screens/warehouses_list_screen.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../data/datasources/settings_remote_datasource.dart';
 import '../../data/repositories/settings_repository_impl.dart';
 import '../../domain/entities/management_entities.dart';
@@ -11,15 +12,16 @@ import '../../domain/usecases/delete_warehouse.dart';
 import '../../domain/usecases/get_management_data.dart';
 import '../../domain/usecases/update_warehouse.dart';
 import 'add_edit_warehouse_screen.dart';
+import '../../../../core/providers/auth_providers.dart';
 
-class WarehousesListScreen extends StatefulWidget {
+class WarehousesListScreen extends ConsumerStatefulWidget {
   const WarehousesListScreen({super.key});
 
   @override
-  State<WarehousesListScreen> createState() => _WarehousesListScreenState();
+  ConsumerState<WarehousesListScreen> createState() => _WarehousesListScreenState();
 }
 
-class _WarehousesListScreenState extends State<WarehousesListScreen> {
+class _WarehousesListScreenState extends ConsumerState<WarehousesListScreen> {
   late final GetWarehouses _getWarehouses;
   late final AddWarehouse _addWarehouse;
   late final UpdateWarehouse _updateWarehouse;
@@ -47,11 +49,7 @@ class _WarehousesListScreenState extends State<WarehousesListScreen> {
       _error = null;
     });
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception("Utilisateur non authentifié.");
-      
-      final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
-      _organizationId = userDoc.data()?['organizationId'] as String?;
+      _organizationId = ref.read(organizationIdProvider).value;
       if (_organizationId == null) throw Exception("Organisation non trouvée.");
 
       final warehouses = await _getWarehouses(_organizationId!);
@@ -99,10 +97,14 @@ class _WarehousesListScreenState extends State<WarehousesListScreen> {
 
     if (confirmed == true && _organizationId != null) {
       try {
-        await _deleteWarehouse(organizationId: _organizationId!, warehouseId: warehouse.id);
+        await _deleteWarehouse(
+            organizationId: _organizationId!, warehouseId: warehouse.id);
         _loadData();
       } catch (e) {
-        if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erreur: $e")));
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text("Erreur: $e")));
+        }
       }
     }
   }

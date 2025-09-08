@@ -1,21 +1,22 @@
 // lib/features/settings/presentation/screens/add_supplier_screen.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/datasources/settings_remote_datasource.dart';
 import '../../data/repositories/settings_repository_impl.dart';
 import '../../domain/usecases/add_supplier.dart';
+import '../../../../core/providers/auth_providers.dart';
 
-class AddSupplierScreen extends StatefulWidget {
+class AddSupplierScreen extends ConsumerStatefulWidget {
   const AddSupplierScreen({super.key});
 
   @override
-  State<AddSupplierScreen> createState() => _AddSupplierScreenState();
+  ConsumerState<AddSupplierScreen> createState() => _AddSupplierScreenState();
 }
 
-class _AddSupplierScreenState extends State<AddSupplierScreen> {
+class _AddSupplierScreenState extends ConsumerState<AddSupplierScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController(); // ✅ Contrôleur pour le téléphone
@@ -45,11 +46,7 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception("Utilisateur non authentifié.");
-      
-      final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
-      final organizationId = userDoc.data()?['organizationId'] as String?;
+      final organizationId = ref.read(organizationIdProvider).value;
       if (organizationId == null) throw Exception("Organisation non trouvée.");
 
       // ✅ On récupère le nom et le téléphone pour les passer au cas d'utilisation

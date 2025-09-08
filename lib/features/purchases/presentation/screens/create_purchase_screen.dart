@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../settings/domain/entities/management_entities.dart';
 import '../controllers/create_purchase_controller.dart';
@@ -13,15 +14,16 @@ import '../widgets/create_purchase/shipping_and_reception_step.dart';
 import '../widgets/create_purchase/supplier_and_warehouse_step.dart';
 import '../widgets/create_purchase/summary_step.dart';
 import '../widgets/create_purchase/warehouse_supplier_picker.dart';
+import '../../../../core/providers/auth_providers.dart';
 
-class CreatePurchaseScreen extends StatefulWidget {
+class CreatePurchaseScreen extends ConsumerStatefulWidget {
   const CreatePurchaseScreen({super.key});
 
   @override
-  State<CreatePurchaseScreen> createState() => _CreatePurchaseScreenState();
+  ConsumerState<CreatePurchaseScreen> createState() => _CreatePurchaseScreenState();
 }
 
-class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
+class _CreatePurchaseScreenState extends ConsumerState<CreatePurchaseScreen> {
   final _step1FormKey = GlobalKey<FormState>();
   late final PageController _pageController;
   int _currentStep = 0;
@@ -53,22 +55,28 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     _shippingFeesController = TextEditingController(text: '0');
     _initialOrderDate = _orderDate;
     _controller = CreatePurchaseController();
-    _controller.loadInitialData().then((data) {
-      if (!mounted) return;
-      setState(() {
-        _suppliers = data.suppliers;
-        _warehouses = data.warehouses;
-        _paymentMethods = data.paymentMethods;
-        if (_warehouses.isNotEmpty) _warehouse = _warehouses.first;
-        _isLoading = false;
+    final orgId = ref.read(organizationIdProvider).value;
+    if (orgId != null) {
+      _controller.loadInitialData(orgId).then((data) {
+        if (!mounted) return;
+        setState(() {
+          _suppliers = data.suppliers;
+          _warehouses = data.warehouses;
+          _paymentMethods = data.paymentMethods;
+          if (_warehouses.isNotEmpty) _warehouse = _warehouses.first;
+          _isLoading = false;
+        });
+      }).catchError((e) {
+        if (!mounted) return;
+        setState(() {
+          _loadingError = "Erreur de chargement: ${e.toString()}";
+          _isLoading = false;
+        });
       });
-    }).catchError((e) {
-      if (!mounted) return;
-      setState(() {
-        _loadingError = "Erreur de chargement: ${e.toString()}";
-        _isLoading = false;
-      });
-    });
+    } else {
+      _loadingError = 'Organisation introuvable';
+      _isLoading = false;
+    }
   }
 
   @override
@@ -129,7 +137,14 @@ class _CreatePurchaseScreenState extends State<CreatePurchaseScreen> {
     setState(() => _isSaving = true);
     try {
       final shippingFees = double.tryParse(_shippingFeesController.text) ?? 0.0;
+      final orgId = ref.read(organizationIdProvider).value;
+      if (orgId == null) {
+        _snack('Organisation introuvable.', isError: true);
+        setState(() => _isSaving = false);
+        return;
+      }
       await _controller.savePurchase(
+        organizationId: orgId,
         supplier: _supplier!,
         warehouse: _warehouse!,
         orderDate: _orderDate,

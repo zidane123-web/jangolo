@@ -6,9 +6,13 @@ import '../models/purchase_model.dart';
 
 abstract class PurchaseRemoteDataSource {
   Stream<List<PurchaseModel>> getAllPurchases(String organizationId);
-  
+
   // ➜ Nouvelle méthode ajoutée au contrat
   Future<void> createPurchase(String organizationId, PurchaseModel purchase);
+
+  /// Récupère le document principal d'un achat ainsi que les lignes associées.
+  Future<(PurchaseModel?, List<PurchaseLineModel>)> getPurchaseDetails(
+      String organizationId, String purchaseId);
 }
 
 class PurchaseRemoteDataSourceImpl implements PurchaseRemoteDataSource {
@@ -68,5 +72,30 @@ class PurchaseRemoteDataSourceImpl implements PurchaseRemoteDataSource {
       print('Erreur lors de la création de l\'achat: $e');
       throw Exception('Impossible de sauvegarder l\'achat.');
     }
+  }
+
+  @override
+  Future<(PurchaseModel?, List<PurchaseLineModel>)> getPurchaseDetails(
+      String organizationId, String purchaseId) async {
+    final purchaseRef = firestore
+        .collection('organisations')
+        .doc(organizationId)
+        .collection('purchases')
+        .doc(purchaseId);
+
+    final purchaseDoc = await purchaseRef.get();
+
+    if (!purchaseDoc.exists) {
+      return (null, []);
+    }
+
+    final itemsSnapshot = await purchaseRef.collection('items').get();
+    final items = itemsSnapshot.docs
+        .map((doc) => PurchaseLineModel.fromJson(doc.data(), doc.id))
+        .toList();
+
+    final purchase = PurchaseModel.fromSnapshot(purchaseDoc);
+
+    return (purchase, items);
   }
 }

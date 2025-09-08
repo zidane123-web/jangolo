@@ -42,9 +42,30 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
   Future<PurchaseEntity?> getPurchaseDetails({
     required String organizationId,
     required String purchaseId,
-  }) {
-    // TODO: Implémenter la logique pour récupérer les détails
-    throw UnimplementedError();
+  }) async {
+    final (purchaseModel, itemModels) =
+        await remoteDataSource.getPurchaseDetails(organizationId, purchaseId);
+
+    if (purchaseModel == null) {
+      return null;
+    }
+
+    return PurchaseEntity(
+      id: purchaseModel.id,
+      supplier: purchaseModel.supplier,
+      status: purchaseModel.status,
+      createdAt: purchaseModel.createdAt,
+      eta: purchaseModel.eta,
+      warehouse: purchaseModel.warehouse,
+      items: itemModels,
+      payments: purchaseModel.payments,
+      reference: purchaseModel.reference,
+      paymentTerms: purchaseModel.paymentTerms,
+      notes: purchaseModel.notes,
+      globalDiscount: purchaseModel.globalDiscount,
+      shippingFees: purchaseModel.shippingFees,
+      otherFees: purchaseModel.otherFees,
+    );
   }
 
   @override

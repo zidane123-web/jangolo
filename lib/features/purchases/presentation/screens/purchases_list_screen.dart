@@ -10,6 +10,7 @@ import '../../domain/entities/purchase_entity.dart';
 import '../../domain/usecases/get_all_purchases.dart';
 
 import 'create_purchase_screen.dart';
+import 'purchase_detail_screen.dart';
 
 // L'enum de filtre reste local à cet écran
 enum _FilterStatus { paid, unpaid, draft }
@@ -251,7 +252,13 @@ class _OrdersTabState extends State<_OrdersTab>
                 final p = list[i];
                 final color = _statusColor(p.status);
                 return InkWell(
-                  onTap: () {},
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => PurchaseDetailScreen(purchaseId: p.id),
+                      ),
+                    );
+                  },
                   borderRadius: BorderRadius.circular(14),
                   child: Container(
                     padding: const EdgeInsets.all(12),

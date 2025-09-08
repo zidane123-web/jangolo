@@ -12,6 +12,7 @@ class PurchaseLineModel extends PurchaseLineEntity {
     super.discountType,
     super.discountValue,
     required super.vatRate,
+    required super.allocatedShipping,
   });
 
   factory PurchaseLineModel.fromEntity(PurchaseLineEntity entity) {
@@ -24,6 +25,7 @@ class PurchaseLineModel extends PurchaseLineEntity {
       discountType: entity.discountType,
       discountValue: entity.discountValue,
       vatRate: entity.vatRate,
+      allocatedShipping: entity.allocatedShipping,
     );
   }
 
@@ -51,6 +53,7 @@ class PurchaseLineModel extends PurchaseLineEntity {
       discountType: DiscountType.values.byName(json['discount_type'] as String),
       discountValue: (json['discount_value'] as num).toDouble(),
       vatRate: (json['vat_rate'] as num).toDouble(),
+      allocatedShipping: (json['allocated_shipping'] as num?)?.toDouble(),
     );
   }
 
@@ -70,6 +73,7 @@ class PurchaseLineModel extends PurchaseLineEntity {
       'discount_type': discountType.name,
       'discount_value': discountValue,
       'vat_rate': vatRate,
+      'allocated_shipping': allocatedShipping,
     };
   }
 }

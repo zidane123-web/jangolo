@@ -15,6 +15,8 @@ class PurchaseLineEntity {
   final double discountValue;
   // ✅ MODIFICATION : Le taux de TVA est maintenant requis.
   final double vatRate;
+  // Portion des frais de transport attribuée à cette ligne.
+  final double? allocatedShipping;
 
   const PurchaseLineEntity({
     required this.id,
@@ -25,6 +27,7 @@ class PurchaseLineEntity {
     this.discountType = DiscountType.none,
     this.discountValue = 0.0,
     required this.vatRate, // ✅ MODIFICATION : Plus de valeur par défaut.
+    this.allocatedShipping,
   });
 
   // La quantité est maintenant le nombre de groupes.

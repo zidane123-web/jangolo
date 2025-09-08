@@ -96,8 +96,11 @@ class CreatePurchaseController {
   }) async {
     final organizationId = await _getOrganizationId();
 
-    final grandTotal =
-        items.fold<double>(0.0, (total, item) => total + item.lineTotal.toDouble());
+    final grandTotal = items.fold<double>(
+          0.0,
+          (total, item) => total + item.lineTotal.toDouble(),
+        ) +
+        shippingFees;
     final totalPaid = payments.fold(0.0, (total, p) => total + p.amount);
 
     final List<PaymentEntity> paymentEntities = [];
@@ -132,29 +135,14 @@ class CreatePurchaseController {
       status = PurchaseStatus.approved;
     }
 
-    final newPurchase = PurchaseEntity(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+    final newPurchase = _buildPurchaseEntity(
       supplier: supplier,
-      status: status,
-      createdAt: orderDate,
-      eta: orderDate.add(const Duration(days: 7)),
       warehouse: warehouse,
+      orderDate: orderDate,
+      items: items,
       payments: paymentEntities,
-      shippingFees: shippingFees, // ✅ ON PASSE LA NOUVELLE VALEUR
-      items: items.asMap().entries.map((entry) {
-        final item = entry.value;
-        final index = entry.key;
-        return PurchaseLineEntity(
-          id: 'line-${DateTime.now().microsecondsSinceEpoch}-$index',
-          name: item.name,
-          sku: item.sku,
-          scannedCodeGroups: item.scannedCodeGroups,
-          unitPrice: item.unitPrice,
-          discountType: DiscountType.values.byName(item.discountType.name),
-          discountValue: item.discountValue,
-          vatRate: item.vatRate,
-        );
-      }).toList(),
+      shippingFees: shippingFees,
+      status: status,
     );
 
     await _createPurchase(
@@ -181,6 +169,51 @@ class CreatePurchaseController {
       organizationId: organizationId,
       name: name,
       address: address,
+    );
+  }
+
+  PurchaseEntity _buildPurchaseEntity({
+    required Supplier supplier,
+    required Warehouse warehouse,
+    required DateTime orderDate,
+    required List<LineItem> items,
+    required List<PaymentEntity> payments,
+    required double shippingFees,
+    required PurchaseStatus status,
+  }) {
+    final purchaseSubtotal =
+        items.fold<double>(0.0, (sum, item) => sum + item.lineSubtotal.toDouble());
+
+    final mappedItems = items.asMap().entries.map((entry) {
+      final item = entry.value;
+      final index = entry.key;
+      final proportion =
+          purchaseSubtotal > 0 ? (item.lineSubtotal / purchaseSubtotal) : 0;
+      final shippingShareForLine = shippingFees * proportion;
+
+      return PurchaseLineEntity(
+        id: 'line-${DateTime.now().microsecondsSinceEpoch}-$index',
+        name: item.name,
+        sku: item.sku,
+        scannedCodeGroups: item.scannedCodeGroups,
+        unitPrice: item.unitPrice,
+        discountType: DiscountType.values.byName(item.discountType.name),
+        discountValue: item.discountValue,
+        vatRate: item.vatRate,
+        allocatedShipping: shippingShareForLine,
+      );
+    }).toList();
+
+    return PurchaseEntity(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      supplier: supplier,
+      status: status,
+      createdAt: orderDate,
+      eta: orderDate.add(const Duration(days: 7)),
+      warehouse: warehouse,
+      payments: payments,
+      shippingFees: shippingFees,
+      items: mappedItems,
     );
   }
 }

@@ -103,6 +103,10 @@ class CreatePurchaseController {
     final isReceived =
         receptionChoice == ReceptionStatusChoice.alreadyReceived;
 
+    // Sous-total utilisé pour répartir les frais de transport
+    final purchaseSubtotal = items.fold<double>(
+        0.0, (sum, item) => sum + item.lineSubtotal.toDouble());
+
     final purchaseEntity = _buildPurchaseEntity(
       supplier: supplier,
       warehouse: warehouse,
@@ -161,7 +165,7 @@ class CreatePurchaseController {
         for (int i = 0; i < items.length; i++) {
           final lineItem = items[i];
           if (lineItem.sku == null || lineItem.sku!.isEmpty) continue;
-          
+
           final articleRef = _firestore
               .collection('organisations')
               .doc(organizationId)
@@ -174,7 +178,18 @@ class CreatePurchaseController {
           final oldQty = oldArticle.totalQuantity;
           final oldCost = oldArticle.buyPrice;
           final newQty = lineItem.qty;
-          final newPrice = lineItem.unitPrice;
+
+          // Répartition des frais de transport pour cette ligne
+          final proportion = purchaseSubtotal > 0
+              ? (lineItem.lineSubtotal / purchaseSubtotal)
+              : 0;
+          final shippingShareForLine = shippingFees * proportion;
+          final shippingPerUnit = newQty > 0
+              ? (shippingShareForLine / newQty)
+              : 0;
+          final landedCost = lineItem.unitPrice + shippingPerUnit;
+
+          final newPrice = landedCost; // coût d'acquisition
 
           final newTotalQty = oldQty + newQty;
           // On évite la division par zéro si le stock total devient nul
@@ -220,6 +235,10 @@ class CreatePurchaseController {
     final totalPaid =
         payments.fold(0.0, (total, p) => total + p.amount);
 
+    // Sous-total avant frais de transport, utilisé pour la répartition
+    final purchaseSubtotal = items.fold<double>(
+        0.0, (sum, item) => sum + item.lineSubtotal.toDouble());
+
     final List<PaymentEntity> paymentEntities = [];
     for (var i = 0; i < payments.length; i++) {
       final p = payments[i];
@@ -264,6 +283,10 @@ class CreatePurchaseController {
       items: items.asMap().entries.map((entry) {
         final item = entry.value;
         final index = entry.key;
+        final proportion = purchaseSubtotal > 0
+            ? (item.lineSubtotal / purchaseSubtotal)
+            : 0;
+        final shippingShareForLine = shippingFees * proportion;
         return PurchaseLineEntity(
           id: 'line-${DateTime.now().microsecondsSinceEpoch}-$index',
           name: item.name,
@@ -273,6 +296,7 @@ class CreatePurchaseController {
           discountType: DiscountType.values.byName(item.discountType.name),
           discountValue: item.discountValue,
           vatRate: item.vatRate,
+          allocatedShipping: shippingShareForLine,
         );
       }).toList(),
     );

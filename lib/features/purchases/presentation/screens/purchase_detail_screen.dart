@@ -228,7 +228,7 @@ class _OverviewTab extends StatelessWidget {
                 child: ListTile(
                   leading: CircleAvatar(child: Text(item.qty.toStringAsFixed(0))),
                   title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('PU: ${_money(item.unitPrice)}'),
+                  subtitle: Text('PU: ${_money(item.unitPrice)} + Transport: ${_money(item.allocatedShipping ?? 0)}'),
                   trailing: Text(_money(item.lineTotal), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                 ),
               );

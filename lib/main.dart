@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart'; // Import Firebase Core
 import 'package:intl/date_symbol_data_local.dart'; // <-- 1. IMPORT NÉCESSAIRE
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'firebase_options.dart'; // Import the generated file
 // ➜ L'IMPORT EST MIS À JOUR ICI
 import 'core/auth/auth_gate.dart';
@@ -17,7 +18,7 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  runApp(const AfricaPhoneApp());
+  runApp(const ProviderScope(child: AfricaPhoneApp()));
 }
 
 class AfricaPhoneApp extends StatelessWidget {

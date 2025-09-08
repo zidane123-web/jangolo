@@ -1,40 +1,28 @@
 // lib/features/purchases/presentation/screens/purchase_detail_screen.dart
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/datasources/remote_datasource.dart';
-import '../../data/repositories/purchase_repository_impl.dart';
 import '../../domain/entities/purchase_entity.dart';
-import '../../domain/entities/purchase_line_entity.dart';
-import '../../domain/usecases/get_purchase_details.dart';
+import '../providers/purchases_providers.dart';
 
-class PurchaseDetailScreen extends StatefulWidget {
+class PurchaseDetailScreen extends ConsumerStatefulWidget {
   final String purchaseId;
   const PurchaseDetailScreen({super.key, required this.purchaseId});
 
   @override
-  State<PurchaseDetailScreen> createState() => _PurchaseDetailScreenState();
+  ConsumerState<PurchaseDetailScreen> createState() => _PurchaseDetailScreenState();
 }
 
-class _PurchaseDetailScreenState extends State<PurchaseDetailScreen>
+class _PurchaseDetailScreenState extends ConsumerState<PurchaseDetailScreen>
     with SingleTickerProviderStateMixin {
-  late final GetPurchaseDetails _getPurchaseDetails;
-  Future<PurchaseEntity?>? _purchaseFuture;
   late final TabController _tabController;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    final remoteDataSource =
-        PurchaseRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
-    final repository =
-        PurchaseRepositoryImpl(remoteDataSource: remoteDataSource);
-    _getPurchaseDetails = GetPurchaseDetails(repository);
-    _purchaseFuture = _loadPurchase();
   }
 
   @override
@@ -43,21 +31,10 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen>
     super.dispose();
   }
 
-  Future<PurchaseEntity?> _loadPurchase() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-    final userDoc = await FirebaseFirestore.instance
-        .collection('utilisateurs')
-        .doc(user.uid)
-        .get();
-    final orgId = userDoc.data()?['organizationId'] as String?;
-    if (orgId == null) return null;
-    return _getPurchaseDetails(
-        organizationId: orgId, purchaseId: widget.purchaseId);
-  }
-
   @override
   Widget build(BuildContext context) {
+    final purchaseAsync = ref.watch(purchaseDetailProvider(widget.purchaseId));
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -66,17 +43,12 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen>
         elevation: 0.8,
         surfaceTintColor: Colors.transparent,
       ),
-      body: FutureBuilder<PurchaseEntity?>(
-        future: _purchaseFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
+      body: purchaseAsync.when(
+        data: (purchase) {
+          if (purchase == null) {
             return const Center(
                 child: Text("Impossible de charger les détails de l'achat."));
           }
-          final purchase = snapshot.data!;
           return Column(
             children: [
               Padding(
@@ -102,6 +74,9 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen>
             ],
           );
         },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, stack) => Center(
+            child: Text("Impossible de charger les détails de l'achat.")),
       ),
     );
   }

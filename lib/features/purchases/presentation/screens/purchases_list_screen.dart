@@ -1,13 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// --- IMPORTS ---
-import '../../data/datasources/remote_datasource.dart';
-import '../../data/repositories/purchase_repository_impl.dart';
 import '../../domain/entities/purchase_entity.dart';
-import '../../domain/usecases/get_all_purchases.dart';
+import '../providers/purchases_providers.dart';
 
 import 'create_purchase_screen.dart';
 import 'purchase_detail_screen.dart';
@@ -86,77 +82,35 @@ class _PurchasesListScreenState extends State<PurchasesListScreen>
 }
 
 // ================== Onglet des Commandes (entièrement refactorisé) =====================================
-class _OrdersTab extends StatefulWidget {
+class _OrdersTab extends ConsumerStatefulWidget {
   const _OrdersTab();
 
   @override
-  State<_OrdersTab> createState() => _OrdersTabState();
+  ConsumerState<_OrdersTab> createState() => _OrdersTabState();
 }
 
-class _OrdersTabState extends State<_OrdersTab>
+class _OrdersTabState extends ConsumerState<_OrdersTab>
     with AutomaticKeepAliveClientMixin {
-      
-  late final GetAllPurchases _getAllPurchases;
-  Future<String?>? _organizationIdFuture;
-
   _FilterStatus? _statusFilter;
   DateTime _selectedDate = DateTime.now();
-  
-  @override
-  void initState() {
-    super.initState();
-    final remoteDataSource = PurchaseRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
-    final repository = PurchaseRepositoryImpl(remoteDataSource: remoteDataSource);
-    _getAllPurchases = GetAllPurchases(repository);
-
-    _organizationIdFuture = _getOrganizationId();
-  }
-  
-  Future<String?> _getOrganizationId() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-
-    final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(user.uid).get();
-    return userDoc.data()?['organizationId'] as String?;
-  }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
-    return FutureBuilder<String?>(
-      future: _organizationIdFuture,
-      builder: (context, orgSnapshot) {
-        if (orgSnapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+    final purchasesAsync = ref.watch(purchasesStreamProvider);
+
+    return purchasesAsync.when(
+      data: (allPurchases) {
+        if (allPurchases.isEmpty) {
+          return const Center(child: Text("Aucun achat trouvé."));
         }
-        if (orgSnapshot.hasError || !orgSnapshot.hasData || orgSnapshot.data == null) {
-          return const Center(child: Text("Impossible de charger les informations de l'organisation."));
-        }
-
-        final organizationId = orgSnapshot.data!;
-
-        return StreamBuilder<List<PurchaseEntity>>(
-          stream: _getAllPurchases(organizationId),
-          builder: (context, purchaseSnapshot) {
-            if (purchaseSnapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (purchaseSnapshot.hasError) {
-              return Center(child: Text("Erreur: ${purchaseSnapshot.error}"));
-            }
-            if (!purchaseSnapshot.hasData || purchaseSnapshot.data!.isEmpty) {
-              return const Center(child: Text("Aucun achat trouvé."));
-            }
-
-            final allPurchases = purchaseSnapshot.data!;
-            final filteredList = _filterPurchases(allPurchases);
-            final stats = _computeStats(allPurchases);
-
-            return _buildPurchaseList(filteredList, stats);
-          },
-        );
+        final filteredList = _filterPurchases(allPurchases);
+        final stats = _computeStats(allPurchases);
+        return _buildPurchaseList(filteredList, stats);
       },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, stack) => Center(child: Text("Erreur: $err")),
     );
   }
 

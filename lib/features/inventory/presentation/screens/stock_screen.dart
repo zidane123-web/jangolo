@@ -1,56 +1,31 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../data/datasources/inventory_remote_datasource.dart';
 import '../../data/models/article_detail_data.dart';
-import '../../data/repositories/inventory_repository_impl.dart';
 import '../../domain/entities/article_entity.dart';
 import '../../domain/usecases/add_article.dart';
-import '../../domain/usecases/get_articles.dart';
 import 'article_detail_screen.dart';
 import 'create_article_screen.dart';
+import '../providers/inventory_providers.dart';
+import '../../../../core/providers/auth_providers.dart';
 
-class StockScreen extends StatefulWidget {
+class StockScreen extends ConsumerStatefulWidget {
   final VoidCallback? onViewed;
   const StockScreen({super.key, this.onViewed});
 
   @override
-  State<StockScreen> createState() => _StockScreenState();
+  ConsumerState<StockScreen> createState() => _StockScreenState();
 }
 
-class _StockScreenState extends State<StockScreen>
+class _StockScreenState extends ConsumerState<StockScreen>
     with AutomaticKeepAliveClientMixin {
-  late final GetArticles _getArticles;
-  late final AddArticle _addArticle;
-  Future<String?>? _organizationIdFuture;
-
   ArticleCategory? _filter;
 
   @override
   void initState() {
     super.initState();
-    final remoteDataSource =
-        InventoryRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
-    final repository =
-        InventoryRepositoryImpl(remoteDataSource: remoteDataSource);
-    _getArticles = GetArticles(repository);
-    _addArticle = AddArticle(repository); // Initialisation pour la création
-
-    _organizationIdFuture = _getOrganizationId();
     WidgetsBinding.instance.addPostFrameCallback((_) => widget.onViewed?.call());
-  }
-
-  Future<String?> _getOrganizationId() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception("Utilisateur non authentifié.");
-
-    final userDoc = await FirebaseFirestore.instance
-        .collection('utilisateurs')
-        .doc(user.uid)
-        .get();
-    return userDoc.data()?['organizationId'] as String?;
   }
 
   @override
@@ -78,41 +53,15 @@ class _StockScreenState extends State<StockScreen>
               icon: const Icon(Icons.add_circle_outline)),
         ],
       ),
-      body: FutureBuilder<String?>(
-        future: _organizationIdFuture,
-        builder: (context, orgSnapshot) {
-          if (orgSnapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+      body: ref.watch(articlesStreamProvider).when(
+        data: (allArticles) {
+          if (allArticles.isEmpty) {
+            return const Center(child: Text("Aucun article dans l'inventaire."));
           }
-          if (orgSnapshot.hasError ||
-              !orgSnapshot.hasData ||
-              orgSnapshot.data == null) {
-            return Center(
-                child: Text(
-                    "Erreur: Impossible de charger l'organisation. ${orgSnapshot.error}"));
-          }
-          final organizationId = orgSnapshot.data!;
-
-          return StreamBuilder<List<ArticleEntity>>(
-            stream: _getArticles(organizationId),
-            builder: (context, articleSnapshot) {
-              if (articleSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (articleSnapshot.hasError) {
-                return Center(
-                    child: Text("Erreur: ${articleSnapshot.error}"));
-              }
-              if (!articleSnapshot.hasData || articleSnapshot.data!.isEmpty) {
-                return const Center(
-                    child: Text("Aucun article dans l'inventaire."));
-              }
-
-              final allArticles = articleSnapshot.data!;
-              return _buildContent(allArticles);
-            },
-          );
+          return _buildContent(allArticles);
         },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, stack) => Center(child: Text("Erreur: $err")),
       ),
     );
   }
@@ -250,12 +199,16 @@ class _StockScreenState extends State<StockScreen>
           .showSnackBar(const SnackBar(content: Text('Scanner à implémenter')));
 
   Future<void> _onCreateArticle() async {
-    final organizationId = await _organizationIdFuture;
+    final organizationId = ref.read(organizationIdProvider).value;
     if (organizationId == null || !mounted) return;
+
+    final repository = ref.read(inventoryRepositoryProvider);
+    final addArticleUseCase = AddArticle(repository);
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CreateArticleScreen(
-          addArticle: _addArticle,
+          addArticle: addArticleUseCase,
           organizationId: organizationId,
         ),
       ),

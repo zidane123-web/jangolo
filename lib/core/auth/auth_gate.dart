@@ -1,22 +1,20 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// ➜ IMPORTS MIS À JOUR vers le dossier features/auth
 import '../../features/auth/presentation/screens/onboarding_screen.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 
-// ➜ L'import vers le shell de navigation ne change pas
 import '../navigation/main_nav_shell.dart';
-
-class AuthGate extends StatefulWidget {
+import '../providers/auth_providers.dart';
+class AuthGate extends ConsumerStatefulWidget {
   const AuthGate({super.key});
 
   @override
-  State<AuthGate> createState() => _AuthGateState();
+  ConsumerState<AuthGate> createState() => _AuthGateState();
 }
 
-class _AuthGateState extends State<AuthGate> {
+class _AuthGateState extends ConsumerState<AuthGate> {
   bool? _onboardingCompleted;
 
   @override
@@ -43,19 +41,19 @@ class _AuthGateState extends State<AuthGate> {
       return const OnboardingScreen();
     }
 
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
+    final authState = ref.watch(authStateChangesProvider);
 
-        if (snapshot.hasData) {
+    return authState.when(
+      data: (user) {
+        if (user != null) {
           return const MainNavShell();
         }
-
         return const LoginScreen();
       },
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (err, stack) =>
+          Scaffold(body: Center(child: Text('Erreur: $err'))),
     );
   }
 }

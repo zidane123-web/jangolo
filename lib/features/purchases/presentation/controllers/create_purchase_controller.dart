@@ -64,18 +64,7 @@ class CreatePurchaseController {
     _addMovement = AddMovement(_inventoryRepository);
   }
 
-  Future<String> _getOrganizationId() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception('Utilisateur non authentifié.');
-    final userDoc =
-        await _firestore.collection('utilisateurs').doc(user.uid).get();
-    final organizationId = userDoc.data()?['organizationId'] as String?;
-    if (organizationId == null) throw Exception('Organisation non trouvée.');
-    return organizationId;
-  }
-
-  Future<InitialPurchaseData> loadInitialData() async {
-    final organizationId = await _getOrganizationId();
+  Future<InitialPurchaseData> loadInitialData(String organizationId) async {
     final results = await Future.wait([
       _getSuppliers(organizationId),
       _getWarehouses(organizationId),
@@ -89,6 +78,7 @@ class CreatePurchaseController {
   }
 
   Future<void> savePurchase({
+    required String organizationId,
     required Supplier supplier,
     required Warehouse warehouse,
     required DateTime orderDate,
@@ -99,7 +89,6 @@ class CreatePurchaseController {
     required double shippingFees,
     required bool approve,
   }) async {
-    final organizationId = await _getOrganizationId();
     final isReceived =
         receptionChoice == ReceptionStatusChoice.alreadyReceived;
 
@@ -302,8 +291,11 @@ class CreatePurchaseController {
     );
   }
 
-  Future<Supplier> addSupplier({required String name, String? phone}) async {
-    final organizationId = await _getOrganizationId();
+  Future<Supplier> addSupplier({
+    required String organizationId,
+    required String name,
+    String? phone,
+  }) {
     return _addSupplier(
       organizationId: organizationId,
       name: name,
@@ -311,8 +303,11 @@ class CreatePurchaseController {
     );
   }
 
-  Future<Warehouse> addWarehouse({required String name, String? address}) async {
-    final organizationId = await _getOrganizationId();
+  Future<Warehouse> addWarehouse({
+    required String organizationId,
+    required String name,
+    String? address,
+  }) {
     return _addWarehouse(
       organizationId: organizationId,
       name: name,

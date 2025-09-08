@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../domain/entities/movement_entity.dart';
-import '../../data/datasources/inventory_remote_datasource.dart';
-import '../../data/repositories/inventory_repository_impl.dart';
-import '../../domain/usecases/get_movements.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class MovementListScreen extends StatelessWidget {
+import '../../domain/entities/movement_entity.dart';
+import '../providers/inventory_providers.dart';
+
+class MovementListScreen extends ConsumerWidget {
   final String articleName;
   final String sku;
   final String articleId;
@@ -18,99 +16,63 @@ class MovementListScreen extends StatelessWidget {
     required this.articleId,
   });
 
-  Future<String> _getOrganizationId() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception('Utilisateur non authentifié.');
-    final doc = await FirebaseFirestore.instance
-        .collection('utilisateurs')
-        .doc(user.uid)
-        .get();
-    final orgId = doc.data()?['organizationId'] as String?;
-    if (orgId == null) throw Exception('Organisation non trouvée.');
-    return orgId;
-  }
-
   @override
-  Widget build(BuildContext context) {
-    final getMovements = GetMovements(
-      InventoryRepositoryImpl(
-        remoteDataSource:
-            InventoryRemoteDataSourceImpl(firestore: FirebaseFirestore.instance),
-      ),
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final movementsAsync = ref.watch(movementsStreamProvider(articleId));
 
-    return FutureBuilder<String>(
-      future: _getOrganizationId(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          if (snapshot.hasError) {
-            return Scaffold(
-              appBar: AppBar(title: const Text('Mouvements')),
-              body: Center(child: Text('Erreur: ${snapshot.error}')),
-            );
-          }
-          return Scaffold(
-            appBar: AppBar(title: const Text('Mouvements')),
-            body: const Center(child: CircularProgressIndicator()),
-          );
-        }
-        final orgId = snapshot.data!;
-        return StreamBuilder<List<MovementEntity>>(
-          stream: getMovements(orgId, articleId),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              if (snapshot.hasError) {
-                return Center(child: Text('Erreur: ${snapshot.error}'));
-              }
-              return const Center(child: CircularProgressIndicator());
-            }
-            final allMovements = snapshot.data!;
-            final today = DateTime.now();
-            final todays = allMovements
-                .where((m) => _isSameDay(m.date, today))
-                .toList()
-              ..sort((a, b) => b.date.compareTo(a.date));
+    return movementsAsync.when(
+      data: (allMovements) {
+        final today = DateTime.now();
+        final todays = allMovements
+            .where((m) => _isSameDay(m.date, today))
+            .toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
 
-            final sums = _DaySums.from(todays);
+        final sums = _DaySums.from(todays);
 
-            return Scaffold(
-              appBar: AppBar(
-                title: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Mouvements'),
-                    Text(
-                      '$articleName • SKU: $sku',
-                      style: Theme.of(context).textTheme.bodySmall,
+        return Scaffold(
+          appBar: AppBar(
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Mouvements'),
+                Text(
+                  '$articleName • SKU: $sku',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          body: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              children: [
+                _KpiRow(sums: sums),
+                const SizedBox(height: 12),
+                if (todays.isEmpty)
+                  _EmptyToday()
+                else
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: todays.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) =>
+                          _MovementRow(m: todays[index]),
                     ),
-                  ],
-                ),
-              ),
-              body: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                child: Column(
-                  children: [
-                    _KpiRow(sums: sums),
-                    const SizedBox(height: 12),
-                    if (todays.isEmpty)
-                      _EmptyToday()
-                    else
-                      Expanded(
-                        child: ListView.separated(
-                          itemCount: todays.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 8),
-                          itemBuilder: (context, index) =>
-                              _MovementRow(m: todays[index]),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
+                  ),
+              ],
+            ),
+          ),
         );
       },
+      loading: () => Scaffold(
+        appBar: AppBar(title: const Text('Mouvements')),
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (err, stack) => Scaffold(
+        appBar: AppBar(title: const Text('Mouvements')),
+        body: Center(child: Text('Erreur: $err')),
+      ),
     );
   }
 

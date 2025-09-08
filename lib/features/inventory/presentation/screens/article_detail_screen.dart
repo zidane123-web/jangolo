@@ -2,12 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/article_detail_data.dart';
 import 'movements_page.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/movement_entity.dart';
-import '../../data/datasources/inventory_remote_datasource.dart';
-import '../../data/repositories/inventory_repository_impl.dart';
-import '../../domain/usecases/get_movements.dart';
+import '../providers/inventory_providers.dart';
 
 class ArticleDetailScreen extends StatefulWidget {
   final ArticleDetailData article;
@@ -292,87 +289,51 @@ class _OverviewTab extends StatelessWidget {
 }
 
 // ===== Contenu de l'onglet "Mouvements" =====
-class _MovementsTab extends StatelessWidget {
+class _MovementsTab extends ConsumerWidget {
   final ArticleDetailData article;
   const _MovementsTab({required this.article});
 
-  Future<String> _getOrganizationId() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception('Utilisateur non authentifié.');
-    final doc = await FirebaseFirestore.instance
-        .collection('utilisateurs')
-        .doc(user.uid)
-        .get();
-    final orgId = doc.data()?['organizationId'] as String?;
-    if (orgId == null) throw Exception('Organisation non trouvée.');
-    return orgId;
-  }
-
   @override
-  Widget build(BuildContext context) {
-    final getMovements = GetMovements(
-      InventoryRepositoryImpl(
-        remoteDataSource:
-            InventoryRemoteDataSourceImpl(firestore: FirebaseFirestore.instance),
-      ),
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final movementsAsync = ref.watch(movementsStreamProvider(article.sku));
 
-    return FutureBuilder<String>(
-      future: _getOrganizationId(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Erreur: ${snapshot.error}'));
-          }
-          return const Center(child: CircularProgressIndicator());
-        }
-        final orgId = snapshot.data!;
-        return StreamBuilder<List<MovementEntity>>(
-          stream: getMovements(orgId, article.sku),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              if (snapshot.hasError) {
-                return Center(child: Text('Erreur: ${snapshot.error}'));
-              }
-              return const Center(child: CircularProgressIndicator());
-            }
-            final movements = snapshot.data!;
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+    return movementsAsync.when(
+      data: (movements) {
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    const Expanded(
-                        child: _SectionTitle(title: 'Derniers Mouvements')),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => MovementListScreen(
-                              articleName: article.name,
-                              sku: article.sku,
-                              articleId: article.sku,
-                            ),
-                          ),
-                        );
-                      },
-                      child: const Text('Voir tout'),
-                    ),
-                  ],
+                const Expanded(child: _SectionTitle(title: 'Derniers Mouvements')),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => MovementListScreen(
+                          articleName: article.name,
+                          sku: article.sku,
+                          articleId: article.sku,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Voir tout'),
                 ),
-                const SizedBox(height: 8),
-                if (movements.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 32.0),
-                    child: Center(child: Text('Aucun mouvement enregistré.')),
-                  )
-                else
-                  ...movements.map((m) => _MovementTile(m: m)),
               ],
-            );
-          },
+            ),
+            const SizedBox(height: 8),
+            if (movements.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32.0),
+                child: Center(child: Text('Aucun mouvement enregistré.')),
+              )
+            else
+              ...movements.map((m) => _MovementTile(m: m)),
+          ],
         );
       },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, stack) => Center(child: Text('Erreur: $err')),
     );
   }
 }

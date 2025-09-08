@@ -192,7 +192,7 @@ class CreatePurchaseController {
           final movement = MovementEntity(
             id: movementId,
             type: MovementType.inn,
-            qty: newQty,
+            qty: newQty.toInt(), // ✅ CORRECTION APPLIQUÉE ICI
             date: DateTime.now(),
             reason: 'Réception Achat #${purchaseEntity.id}',
             userId: userId,

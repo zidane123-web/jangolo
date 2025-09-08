@@ -36,7 +36,7 @@ class PurchaseRemoteDataSourceImpl implements PurchaseRemoteDataSource {
             .toList();
       });
     } catch (e) {
-      print('Erreur lors de la récupération des achats: $e');
+      // ✅ CORRECTION: Le print a été retiré. Dans une vraie app, on utiliserait un logger.
       throw Exception('Impossible de charger les achats.');
     }
   }
@@ -69,7 +69,7 @@ class PurchaseRemoteDataSourceImpl implements PurchaseRemoteDataSource {
       await batch.commit();
       
     } catch (e) {
-      print('Erreur lors de la création de l\'achat: $e');
+      // ✅ CORRECTION: Le print a été retiré.
       throw Exception('Impossible de sauvegarder l\'achat.');
     }
   }
@@ -86,7 +86,8 @@ class PurchaseRemoteDataSourceImpl implements PurchaseRemoteDataSource {
     final purchaseDoc = await purchaseRef.get();
 
     if (!purchaseDoc.exists) {
-      return (null, []);
+      // ✅ CORRECTION: On spécifie le type de la liste vide pour corriger l'erreur.
+      return (null, <PurchaseLineModel>[]);
     }
 
     final itemsSnapshot = await purchaseRef.collection('items').get();

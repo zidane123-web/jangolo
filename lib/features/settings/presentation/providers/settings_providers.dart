@@ -19,3 +19,16 @@ final warehousesProvider = FutureProvider<List<Warehouse>>((ref) async {
   final getWarehouses = GetWarehouses(repository);
   return getWarehouses(organizationId);
 });
+
+/// Provider that exposes a [Future] list of [PaymentMethod] for the current organization.
+final paymentMethodsProvider = FutureProvider<List<PaymentMethod>>((ref) async {
+  final organizationId = ref.watch(organizationIdProvider).value;
+  if (organizationId == null) {
+    return [];
+  }
+  final remoteDataSource =
+      SettingsRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
+  final repository = SettingsRepositoryImpl(remoteDataSource: remoteDataSource);
+  final getPaymentMethods = GetPaymentMethods(repository);
+  return getPaymentMethods(organizationId);
+});

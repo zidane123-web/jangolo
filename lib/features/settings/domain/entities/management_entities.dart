@@ -33,10 +33,12 @@ class PaymentMethod {
   final String id;
   final String name; // ex: "Caisse Principale", "MTN Mobile Money"
   final String type; // ex: "cash", "momo", "bank"
+  final double balance; // solde actuel du moyen de paiement
 
   const PaymentMethod({
     required this.id,
     required this.name,
     required this.type,
+    this.balance = 0.0,
   });
 }

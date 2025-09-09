@@ -13,6 +13,11 @@ abstract class SettingsRemoteDataSource {
   Future<WarehouseModel> addWarehouse(String organizationId, String name, String? address);
   Future<void> updateWarehouse(String organizationId, WarehouseModel warehouse);
   Future<void> deleteWarehouse(String organizationId, String warehouseId);
+
+  // ✅ CRUD pour les moyens de paiement
+  Future<PaymentMethodModel> addPaymentMethod(String organizationId, String name, String type, double initialBalance);
+  Future<void> updatePaymentMethod(String organizationId, PaymentMethodModel method);
+  Future<void> deletePaymentMethod(String organizationId, String methodId);
 }
 
 class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
@@ -148,6 +153,54 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
     } catch (e) {
       print('Error deleting warehouse: $e');
       throw Exception('Could not delete warehouse');
+    }
+  }
+
+  // --- Payment Methods CRUD ---
+  @override
+  Future<PaymentMethodModel> addPaymentMethod(String organizationId, String name, String type, double initialBalance) async {
+    try {
+      final docRef = await firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('paymentMethods')
+          .add({'name': name, 'type': type, 'balance': initialBalance});
+
+      final doc = await docRef.get();
+      return PaymentMethodModel.fromSnapshot(doc);
+    } catch (e) {
+      print('Error adding payment method: $e');
+      throw Exception('Could not add payment method');
+    }
+  }
+
+  @override
+  Future<void> updatePaymentMethod(String organizationId, PaymentMethodModel method) async {
+    try {
+      await firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('paymentMethods')
+          .doc(method.id)
+          .update(method.toJson());
+    } catch (e) {
+      print('Error updating payment method: $e');
+      throw Exception('Could not update payment method');
+    }
+  }
+
+  @override
+  Future<void> deletePaymentMethod(String organizationId, String methodId) async {
+    try {
+      await firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('paymentMethods')
+          .doc(methodId)
+          .delete();
+    } catch (e) {
+      print('Error deleting payment method: $e');
+      throw Exception('Could not delete payment method');
     }
   }
 }

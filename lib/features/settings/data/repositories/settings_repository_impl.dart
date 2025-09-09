@@ -46,4 +46,31 @@ class SettingsRepositoryImpl implements SettingsRepository {
   Future<void> deleteWarehouse({required String organizationId, required String warehouseId}) {
     return remoteDataSource.deleteWarehouse(organizationId, warehouseId);
   }
+
+  // --- Payment Methods CRUD ---
+  @override
+  Future<PaymentMethod> addPaymentMethod({
+    required String organizationId,
+    required String name,
+    required String type,
+    required double initialBalance, // 👈 CORRECTION ICI
+  }) {
+    return remoteDataSource.addPaymentMethod(organizationId, name, type, initialBalance);
+  }
+
+  @override
+  Future<void> updatePaymentMethod({required String organizationId, required PaymentMethod method}) {
+    final model = PaymentMethodModel(
+      id: method.id,
+      name: method.name,
+      type: method.type,
+      balance: method.balance,
+    );
+    return remoteDataSource.updatePaymentMethod(organizationId, model);
+  }
+
+  @override
+  Future<void> deletePaymentMethod({required String organizationId, required String methodId}) {
+    return remoteDataSource.deletePaymentMethod(organizationId, methodId);
+  }
 }

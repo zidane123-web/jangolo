@@ -62,6 +62,7 @@ class PaymentMethodModel extends PaymentMethod {
     required super.id,
     required super.name,
     required super.type,
+    super.balance = 0.0,
   });
 
   factory PaymentMethodModel.fromSnapshot(DocumentSnapshot doc) {
@@ -70,6 +71,7 @@ class PaymentMethodModel extends PaymentMethod {
       id: doc.id,
       name: data['name'] ?? '',
       type: data['type'] ?? 'cash',
+      balance: (data['balance'] as num?)?.toDouble() ?? 0.0,
     );
   }
 
@@ -77,6 +79,7 @@ class PaymentMethodModel extends PaymentMethod {
     return {
       'name': name,
       'type': type,
+      'balance': balance,
     };
   }
 }

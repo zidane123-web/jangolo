@@ -19,6 +19,7 @@ import '../../../inventory/data/datasources/inventory_remote_datasource.dart';
 import '../../../inventory/data/repositories/inventory_repository_impl.dart';
 import '../../../inventory/domain/entities/movement_entity.dart';
 import '../../../inventory/domain/usecases/add_movement.dart';
+import '../../../treasury/data/models/treasury_transaction_model.dart';
 
 /// Bundles initial data needed to create a purchase.
 class InitialPurchaseData {
@@ -111,6 +112,7 @@ class CreatePurchaseController {
     await _firestore.runTransaction((transaction) async {
       // ✅ --- ÉTAPE 1: LECTURES D'ABORD ---
       final List<DocumentSnapshot> articleSnapshots = [];
+      final Map<String, DocumentSnapshot> paymentMethodSnapshots = {};
       if (isReceived && approve) {
         for (final lineItem in items) {
           if (lineItem.sku == null || lineItem.sku!.isEmpty) continue;
@@ -128,6 +130,21 @@ class CreatePurchaseController {
           }
           articleSnapshots.add(articleSnapshot);
         }
+      }
+
+      for (final pay in purchaseEntity.payments) {
+        final methodId = pay.paymentMethod.id;
+        if (methodId.isEmpty || paymentMethodSnapshots.containsKey(methodId)) continue;
+        final methodRef = _firestore
+            .collection('organisations')
+            .doc(organizationId)
+            .collection('paymentMethods')
+            .doc(methodId);
+        final methodSnap = await transaction.get(methodRef);
+        if (!methodSnap.exists) {
+          throw Exception('Moyen de paiement ${pay.paymentMethod.name} introuvable');
+        }
+        paymentMethodSnapshots[methodId] = methodSnap;
       }
 
       // ✅ --- ÉTAPE 2: ÉCRITURES ENSUITE ---
@@ -204,6 +221,37 @@ class CreatePurchaseController {
           );
           await _addMovement(organizationId, lineItem.sku!, movement);
         }
+      }
+
+      // 2d. Mise à jour des soldes de trésorerie et enregistrement des transactions
+      for (final pay in purchaseEntity.payments) {
+        final methodRef = _firestore
+            .collection('organisations')
+            .doc(organizationId)
+            .collection('paymentMethods')
+            .doc(pay.paymentMethod.id);
+
+        transaction.update(methodRef, {
+          'balance': FieldValue.increment(-pay.amount),
+        });
+
+        final treasuryRef = _firestore
+            .collection('organisations')
+            .doc(organizationId)
+            .collection('treasury_transactions')
+            .doc();
+        final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final treasuryModel = TreasuryTransactionModel(
+          id: treasuryRef.id,
+          date: DateTime.now(),
+          amount: -pay.amount,
+          paymentMethodId: pay.paymentMethod.id,
+          paymentMethodName: pay.paymentMethod.name,
+          type: 'purchase_payment',
+          relatedDocumentId: purchaseEntity.id,
+          userId: userId,
+        );
+        transaction.set(treasuryRef, treasuryModel.toJson());
       }
     });
   }

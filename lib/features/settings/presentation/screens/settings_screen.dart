@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 // ✅ NOUVEL IMPORT
 import 'warehouses_list_screen.dart';
 import '../../../auth/presentation/screens/onboarding_screen.dart';
+import 'payment_methods_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -58,6 +59,16 @@ class SettingsScreen extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const WarehousesListScreen(),
+              ));
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.account_balance_wallet_outlined),
+            title: const Text('Moyens de paiement'),
+            subtitle: const Text('Gérer vos caisses et comptes'),
+            onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const PaymentMethodsScreen(),
               ));
             },
           ),

@@ -13,4 +13,9 @@ abstract class SettingsRepository {
   Future<Warehouse> addWarehouse({required String organizationId, required String name, String? address});
   Future<void> updateWarehouse({required String organizationId, required Warehouse warehouse});
   Future<void> deleteWarehouse({required String organizationId, required String warehouseId});
+
+  // ✅ CRUD pour les moyens de paiement
+  Future<PaymentMethod> addPaymentMethod({required String organizationId, required String name, required String type, double initialBalance});
+  Future<void> updatePaymentMethod({required String organizationId, required PaymentMethod method});
+  Future<void> deletePaymentMethod({required String organizationId, required String methodId});
 }

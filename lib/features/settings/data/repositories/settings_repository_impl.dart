@@ -49,7 +49,12 @@ class SettingsRepositoryImpl implements SettingsRepository {
 
   // --- Payment Methods CRUD ---
   @override
-  Future<PaymentMethod> addPaymentMethod({required String organizationId, required String name, required String type, double initialBalance}) {
+  Future<PaymentMethod> addPaymentMethod({
+    required String organizationId,
+    required String name,
+    required String type,
+    required double initialBalance, // 👈 CORRECTION ICI
+  }) {
     return remoteDataSource.addPaymentMethod(organizationId, name, type, initialBalance);
   }
 

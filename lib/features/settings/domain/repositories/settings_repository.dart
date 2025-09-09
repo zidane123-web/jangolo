@@ -15,7 +15,7 @@ abstract class SettingsRepository {
   Future<void> deleteWarehouse({required String organizationId, required String warehouseId});
 
   // ✅ CRUD pour les moyens de paiement
-  Future<PaymentMethod> addPaymentMethod({required String organizationId, required String name, required String type, double initialBalance});
+  Future<PaymentMethod> addPaymentMethod({required String organizationId, required String name, required String type, required double initialBalance}); // 👈 CORRECTION ICI
   Future<void> updatePaymentMethod({required String organizationId, required PaymentMethod method});
   Future<void> deletePaymentMethod({required String organizationId, required String methodId});
 }

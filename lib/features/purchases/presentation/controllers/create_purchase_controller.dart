@@ -1,7 +1,10 @@
+// lib/features/purchases/presentation/controllers/create_purchase_controller.dart
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:jangolo/features/inventory/data/models/article_model.dart';
 import '../../../settings/data/datasources/settings_remote_datasource.dart';
+import '../../../settings/data/models/management_models.dart';
 import '../../../settings/data/repositories/settings_repository_impl.dart';
 import '../../../settings/domain/entities/management_entities.dart';
 import '../../../settings/domain/usecases/add_supplier.dart';
@@ -281,7 +284,9 @@ class CreatePurchaseController {
       final p = payments[i];
       final method = paymentMethods.firstWhere(
         (m) => m.name == p.method,
-        orElse: () => PaymentMethod(id: '', name: p.method, type: ''),
+        // ✅ CORRECTION APPLIQUÉE ICI
+        // On renvoie un PaymentMethodModel pour correspondre au type de la liste.
+        orElse: () => PaymentMethodModel(id: '', name: p.method, type: ''),
       );
       paymentEntities.add(
         PaymentEntity(

@@ -149,6 +149,19 @@ class _AddPaymentBottomSheetContentState
                     return null;
                   },
                 ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () {
+                      final remaining =
+                          widget.grandTotal - _totalPaidSoFar;
+                      _amountController.text =
+                          remaining.toStringAsFixed(0);
+                    },
+                    child: const Text('Payer la totalité'),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 Wrap(
                   spacing: 8,
@@ -156,7 +169,18 @@ class _AddPaymentBottomSheetContentState
                   children: [
                     for (final method in widget.paymentMethods)
                       ChoiceChip(
-                        label: Text(method.name),
+                        label: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(method.name),
+                            Text(
+                              _money(method.balance),
+                              style:
+                                  Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
                         avatar: Icon(_iconForType(method.type)),
                         selected: _selectedMethod?.id == method.id,
                         onSelected: (_) =>

@@ -59,6 +59,8 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
       warehouse: purchaseModel.warehouse,
       items: itemModels,
       payments: purchaseModel.payments,
+      createdByUserId: purchaseModel.createdByUserId,
+      createdByName: purchaseModel.createdByName,
       reference: purchaseModel.reference,
       paymentTerms: purchaseModel.paymentTerms,
       notes: purchaseModel.notes,

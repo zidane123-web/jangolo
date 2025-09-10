@@ -19,6 +19,10 @@ class PurchaseEntity {
   final List<PurchaseLineEntity> items;
   final List<PaymentEntity> payments;
 
+  // Informations sur le créateur de l'achat
+  final String createdByUserId;
+  final String? createdByName;
+
   // Champs optionnels
   final String? reference;
   final String? paymentTerms;
@@ -38,6 +42,8 @@ class PurchaseEntity {
     required this.warehouse,
     required this.items,
     this.payments = const [],
+    required this.createdByUserId,
+    this.createdByName,
     this.reference,
     this.paymentTerms,
     this.notes,

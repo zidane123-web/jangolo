@@ -100,6 +100,19 @@ class CreatePurchaseController {
     final purchaseSubtotal = items.fold<double>(
         0.0, (sum, item) => sum + item.lineSubtotal.toDouble());
 
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      throw Exception('Utilisateur non connecté');
+    }
+    final userSnapshot = await _firestore
+        .collection('utilisateurs')
+        .doc(currentUser.uid)
+        .get();
+    final userData = userSnapshot.data();
+    final fullName = userData == null
+        ? null
+        : '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
+
     final purchaseEntity = _buildPurchaseEntity(
       supplier: supplier,
       warehouse: warehouse,
@@ -110,6 +123,8 @@ class CreatePurchaseController {
       receptionChoice: receptionChoice,
       shippingFees: shippingFees,
       approve: approve,
+      createdByUserId: currentUser.uid,
+      createdByName: (fullName?.isEmpty ?? true) ? null : fullName,
     );
 
     await _firestore.runTransaction((transaction) async {
@@ -269,6 +284,8 @@ class CreatePurchaseController {
     required ReceptionStatusChoice receptionChoice,
     required double shippingFees,
     required bool approve,
+    required String createdByUserId,
+    String? createdByName,
   }) {
     final grandTotal = items.fold<double>(
         0.0, (total, item) => total + item.lineTotal.toDouble());
@@ -321,6 +338,8 @@ class CreatePurchaseController {
       eta: orderDate.add(const Duration(days: 7)),
       warehouse: warehouse,
       payments: paymentEntities,
+      createdByUserId: createdByUserId,
+      createdByName: createdByName,
       shippingFees: shippingFees,
       items: items.asMap().entries.map((entry) {
         final item = entry.value;

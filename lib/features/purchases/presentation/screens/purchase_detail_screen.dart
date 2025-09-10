@@ -139,6 +139,20 @@ class _PurchaseHeader extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.person_outline, size: 14, color: cs.outline),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      "Créé par: ${purchase.createdByName ?? 'Inconnu'}",
+                      style: tt.bodySmall?.copyWith(color: cs.outline),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 8),
               // --- FIN DES INFOS COMPACTES ---
               Wrap(

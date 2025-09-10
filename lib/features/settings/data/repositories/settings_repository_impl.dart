@@ -22,7 +22,10 @@ class SettingsRepositoryImpl implements SettingsRepository {
 
   @override
   Future<List<PaymentMethod>> getPaymentMethods(String organizationId) async {
-    return remoteDataSource.getPaymentMethods(organizationId);
+    // ✅ CORRECTION APPLIQUÉE ICI
+    // On s'assure de convertir les modèles en entités.
+    final models = await remoteDataSource.getPaymentMethods(organizationId);
+    return models.map((model) => model as PaymentMethod).toList();
   }
 
   @override

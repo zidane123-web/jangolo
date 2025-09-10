@@ -107,6 +107,7 @@ class _AddPaymentBottomSheetContentState
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final remaining = widget.grandTotal - _totalPaidSoFar;
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
       child: SafeArea(
@@ -124,7 +125,7 @@ class _AddPaymentBottomSheetContentState
                 Text('Total de la commande : ${_money(widget.grandTotal)}'),
                 Text('Déjà payé : ${_money(_totalPaidSoFar)}'),
                 Text(
-                  'Solde restant : ${_money(widget.grandTotal - _totalPaidSoFar)}',
+                  'Solde restant : ${_money(remaining)}',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
@@ -142,9 +143,13 @@ class _AddPaymentBottomSheetContentState
                     if (v == null || v.isEmpty) return 'Requis';
                     final parsed = double.tryParse(v) ?? 0;
                     if (parsed <= 0) return 'Montant invalide';
-                    if (parsed >
-                        (widget.grandTotal - _totalPaidSoFar) + 0.01) {
-                      return 'Dépasse le solde';
+                    final remaining = widget.grandTotal - _totalPaidSoFar;
+                    if (parsed > remaining) {
+                      return 'Montant dépasse le solde restant';
+                    }
+                    final balance = _selectedMethod?.balance ?? 0;
+                    if (_selectedMethod != null && parsed > balance) {
+                      return 'Solde insuffisant sur ${_selectedMethod!.name}';
                     }
                     return null;
                   },
@@ -154,10 +159,7 @@ class _AddPaymentBottomSheetContentState
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () {
-                      final remaining =
-                          widget.grandTotal - _totalPaidSoFar;
-                      _amountController.text =
-                          remaining.toStringAsFixed(0);
+                      _amountController.text = remaining.toStringAsFixed(0);
                     },
                     child: const Text('Payer la totalité'),
                   ),

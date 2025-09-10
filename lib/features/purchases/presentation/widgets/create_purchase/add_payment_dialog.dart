@@ -77,8 +77,15 @@ class _AddPaymentBottomSheetContentState
         );
         return;
       }
+      final amount = double.tryParse(_amountController.text);
+      if (amount == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Montant invalide')),
+        );
+        return;
+      }
       final payment = PaymentViewModel(
-        amount: double.parse(_amountController.text),
+        amount: amount,
         method: _selectedMethod!.name,
       );
       Navigator.pop(context, payment);
@@ -143,7 +150,6 @@ class _AddPaymentBottomSheetContentState
                     if (v == null || v.isEmpty) return 'Requis';
                     final parsed = double.tryParse(v) ?? 0;
                     if (parsed <= 0) return 'Montant invalide';
-                    final remaining = widget.grandTotal - _totalPaidSoFar;
                     if (parsed > remaining) {
                       return 'Montant dépasse le solde restant';
                     }
@@ -160,6 +166,7 @@ class _AddPaymentBottomSheetContentState
                   child: TextButton(
                     onPressed: () {
                       _amountController.text = remaining.toStringAsFixed(0);
+                      _formKey.currentState?.validate();
                     },
                     child: const Text('Payer la totalité'),
                   ),

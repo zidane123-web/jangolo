@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../settings/domain/entities/management_entities.dart';
 import '../../models/payment_view_model.dart';
@@ -70,6 +71,12 @@ class _AddPaymentBottomSheetContentState
 
   void _onAdd() {
     if (_formKey.currentState!.validate()) {
+      if (_selectedMethod == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Veuillez sélectionner un moyen de paiement')),
+        );
+        return;
+      }
       final payment = PaymentViewModel(
         amount: double.parse(_amountController.text),
         method: _selectedMethod!.name,
@@ -77,6 +84,25 @@ class _AddPaymentBottomSheetContentState
       Navigator.pop(context, payment);
     }
   }
+
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'cash':
+        return Icons.attach_money;
+      case 'momo':
+        return Icons.phone_android;
+      case 'bank':
+        return Icons.account_balance;
+      default:
+        return Icons.payment;
+    }
+  }
+
+  String _money(double v) => NumberFormat.currency(
+        locale: 'fr_FR',
+        symbol: widget.currency,
+        decimalDigits: 0,
+      ).format(v);
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +120,13 @@ class _AddPaymentBottomSheetContentState
               children: [
                 Text('Ajouter un paiement',
                     style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 16),
+                Text('Total de la commande : ${_money(widget.grandTotal)}'),
+                Text('Déjà payé : ${_money(_totalPaidSoFar)}'),
+                Text(
+                  'Solde restant : ${_money(widget.grandTotal - _totalPaidSoFar)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _amountController,
@@ -117,20 +150,19 @@ class _AddPaymentBottomSheetContentState
                   },
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<PaymentMethod>(
-                  value: _selectedMethod,
-                  decoration: const InputDecoration(
-                    labelText: 'Moyen de paiement',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: widget.paymentMethods
-                      .map((method) => DropdownMenuItem(
-                            value: method,
-                            child: Text(method.name),
-                          ))
-                      .toList(),
-                  onChanged: (v) => setState(() => _selectedMethod = v),
-                  validator: (v) => v == null ? 'Requis' : null,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final method in widget.paymentMethods)
+                      ChoiceChip(
+                        label: Text(method.name),
+                        avatar: Icon(_iconForType(method.type)),
+                        selected: _selectedMethod?.id == method.id,
+                        onSelected: (_) =>
+                            setState(() => _selectedMethod = method),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 24),
                 Row(

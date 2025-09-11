@@ -198,7 +198,6 @@ class _AddPaymentBottomSheetContentState
                   children: [
                     for (final method in widget.paymentMethods)
                       Builder(builder: (context) {
-                        final isEnabled = method.balance >= remaining;
                         return ChoiceChip(
                           label: Column(
                             mainAxisSize: MainAxisSize.min,
@@ -214,9 +213,8 @@ class _AddPaymentBottomSheetContentState
                           ),
                           avatar: Icon(_iconForType(method.type)),
                           selected: _selectedMethod?.id == method.id,
-                          onSelected: isEnabled
-                              ? (_) => setState(() => _selectedMethod = method)
-                              : null,
+                          onSelected: (_) =>
+                              setState(() => _selectedMethod = method),
                         );
                       }),
                   ],

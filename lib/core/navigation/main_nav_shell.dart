@@ -5,6 +5,7 @@ import 'package:jangolo/src/screens/home_shell.dart';
 import 'package:jangolo/features/inventory/presentation/screens/stock_screen.dart';
 import 'package:jangolo/src/screens/notifications_screen.dart';
 import 'package:jangolo/features/purchases/presentation/screens/purchases_list_screen.dart';
+import 'package:jangolo/features/sales/presentation/screens/sales_list_screen.dart';
 import 'package:jangolo/features/treasury/presentation/screens/treasury_screen.dart';
 
 class MainNavShell extends StatefulWidget {
@@ -22,6 +23,7 @@ class _MainNavShellState extends State<MainNavShell> {
     const SearchScreen(),
     const StockScreen(), // ✅ Maintenant, ceci utilise la bonne version de l'écran
     const PurchasesListScreen(),
+    const SalesListScreen(),
     const TreasuryScreen(),
     const NotificationsScreen(),
   ];
@@ -62,6 +64,11 @@ class _MainNavShellState extends State<MainNavShell> {
             icon: Icon(Icons.shopping_cart_outlined),
             selectedIcon: Icon(Icons.shopping_cart),
             label: 'Achats',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.point_of_sale_outlined),
+            selectedIcon: Icon(Icons.point_of_sale),
+            label: 'Ventes',
           ),
           NavigationDestination(
             icon: Icon(Icons.account_balance_wallet_outlined),

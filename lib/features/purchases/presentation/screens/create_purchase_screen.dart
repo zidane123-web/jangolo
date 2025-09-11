@@ -262,7 +262,7 @@ class _CreatePurchaseScreenState extends ConsumerState<CreatePurchaseScreen> {
                               onAddPayment: () async {
                                 final gt = _items.fold<double>(
                                     0.0, (t, i) => t + i.lineTotal.toDouble());
-                                final res = await showAddPaymentDialog(
+                                final res = await showAddPaymentBottomSheet(
                                     context: context,
                                     currency: _currency,
                                     grandTotal: gt,

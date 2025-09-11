@@ -2,11 +2,11 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../domain/entities/sale_entity.dart';
 
 import '../../../../core/providers/auth_providers.dart';
 import '../../data/datasources/remote_datasource.dart';
 import '../../data/repositories/sales_repository_impl.dart';
-import '../../domain/entities/sale_entity.dart';
 import '../../domain/usecases/get_all_sales.dart';
 import '../../domain/usecases/get_sale_details.dart';
 import '../controllers/create_sale_controller.dart';
@@ -46,4 +46,29 @@ final saleDetailProvider =
 final createSaleControllerProvider = Provider<CreateSaleController>((ref) {
   final repository = ref.watch(salesRepositoryProvider);
   return CreateSaleController(repository);
+});
+
+/// Search query for filtering sales by customer name
+final salesSearchProvider = StateProvider<String>((ref) => '');
+
+/// Optional status filter; `null` means all statuses
+final salesStatusFilterProvider = StateProvider<SaleStatus?>((ref) => null);
+
+/// Combines stream, search query and status filter to expose filtered sales
+final filteredSalesProvider =
+    Provider<AsyncValue<List<SaleEntity>>>((ref) {
+  final salesAsync = ref.watch(salesStreamProvider);
+  final query = ref.watch(salesSearchProvider);
+  final status = ref.watch(salesStatusFilterProvider);
+
+  return salesAsync.whenData((sales) {
+    return sales.where((sale) {
+      final matchesQuery = query.isEmpty ||
+          (sale.customerName ?? '')
+              .toLowerCase()
+              .contains(query.toLowerCase());
+      final matchesStatus = status == null || sale.status == status;
+      return matchesQuery && matchesStatus;
+    }).toList();
+  });
 });

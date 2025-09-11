@@ -14,6 +14,7 @@ class PaymentStep extends StatelessWidget {
   final List<PaymentViewModel> payments;
   final VoidCallback onAddPayment;
   final ValueChanged<int> onRemovePayment;
+  final ValueChanged<int> onEditPayment;
   final VoidCallback onBack;
   final VoidCallback onNext;
 
@@ -24,6 +25,7 @@ class PaymentStep extends StatelessWidget {
     required this.payments,
     required this.onAddPayment,
     required this.onRemovePayment,
+    required this.onEditPayment,
     required this.onBack,
     required this.onNext,
   });
@@ -33,10 +35,11 @@ class PaymentStep extends StatelessWidget {
   // Calcule le solde restant
   double get balanceDue => grandTotal - totalPaid;
 
-  String _money(num v) {
-    final nf = NumberFormat("#,##0.##", "fr_FR");
-    return "${nf.format(v)} $currency";
-  }
+  String _money(num v) => NumberFormat.currency(
+        locale: 'fr_FR',
+        symbol: currency,
+        decimalDigits: 0,
+      ).format(v);
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +69,7 @@ class PaymentStep extends StatelessWidget {
 
                 // Affiche la liste des paiements ou un message si vide
                 payments.isEmpty
-                    ? const _EmptyPaymentState()
+                    ? _EmptyPaymentState(onAddPayment: onAddPayment)
                     : ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -77,6 +80,7 @@ class PaymentStep extends StatelessWidget {
                             payment: payment,
                             currency: currency,
                             onDelete: () => onRemovePayment(index),
+                            onEdit: () => onEditPayment(index),
                           );
                         },
                       ),
@@ -135,7 +139,8 @@ class PaymentStep extends StatelessWidget {
 // ---- Petits widgets internes pour l'UI ----
 
 class _EmptyPaymentState extends StatelessWidget {
-  const _EmptyPaymentState();
+  final VoidCallback onAddPayment;
+  const _EmptyPaymentState({required this.onAddPayment});
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -163,6 +168,11 @@ class _EmptyPaymentState extends StatelessWidget {
             style: theme.textTheme.bodyMedium
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: onAddPayment,
+            child: const Text('Ajouter un paiement'),
+          ),
         ],
       ),
     );
@@ -173,18 +183,23 @@ class _PaymentTile extends StatelessWidget {
   final PaymentViewModel payment;
   final String currency;
   final VoidCallback onDelete;
+  final VoidCallback onEdit;
 
   const _PaymentTile({
     required this.payment,
     required this.currency,
     required this.onDelete,
+    required this.onEdit,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final nf = NumberFormat("#,##0.##", "fr_FR");
-    final formattedAmount = "${nf.format(payment.amount)} $currency";
+    final formattedAmount = NumberFormat.currency(
+      locale: 'fr_FR',
+      symbol: currency,
+      decimalDigits: 0,
+    ).format(payment.amount);
 
     return Card(
       elevation: 0,
@@ -195,6 +210,7 @@ class _PaymentTile extends StatelessWidget {
       ),
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
+        onTap: onEdit,
         leading: CircleAvatar(
           backgroundColor: theme.colorScheme.secondaryContainer,
           child: const Icon(Icons.receipt_long_outlined),
@@ -204,7 +220,27 @@ class _PaymentTile extends StatelessWidget {
         subtitle: Text('Via: ${payment.method}'),
         trailing: IconButton(
           icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
-          onPressed: onDelete,
+          onPressed: () async {
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Supprimer le paiement?'),
+                content: const Text(
+                    'Cette action retirera définitivement ce paiement.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Annuler'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Supprimer'),
+                  ),
+                ],
+              ),
+            );
+            if (confirmed == true) onDelete();
+          },
         ),
       ),
     );

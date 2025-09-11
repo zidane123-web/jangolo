@@ -105,11 +105,32 @@ class _CreatePurchaseScreenState extends ConsumerState<CreatePurchaseScreen> {
     );
   }
 
-  void _onNext() {
+  Future<void> _onNext() async {
     if (_currentStep == 0 && !_step1FormKey.currentState!.validate()) return;
     if (_currentStep == 1 && _items.isEmpty) {
       _snack('Veuillez ajouter au moins un article.', isError: true);
       return;
+    }
+    if (_currentStep == 2 && _payments.isEmpty) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Aucun paiement ajouté'),
+          content: const Text(
+              'La commande sera enregistrée sans paiement. Voulez-vous continuer ?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Continuer'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true) return;
     }
     if (_currentStep == 3 && _receptionChoice == null) {
       _snack('Veuillez choisir un statut de réception.', isError: true);
@@ -274,6 +295,24 @@ class _CreatePurchaseScreenState extends ConsumerState<CreatePurchaseScreen> {
                               },
                               onRemovePayment: (i) =>
                                   setState(() => _payments.removeAt(i)),
+                              onEditPayment: (i) async {
+                                final gt = _items.fold<double>(
+                                    0.0, (t, item) =>
+                                        t + item.lineTotal.toDouble());
+                                final existing = [..._payments];
+                                final original = existing.removeAt(i);
+                                final res = await showAddPaymentBottomSheet(
+                                  context: context,
+                                  currency: _currency,
+                                  grandTotal: gt,
+                                  existingPayments: existing,
+                                  paymentMethods: _paymentMethods,
+                                  initialPayment: original,
+                                );
+                                if (res != null) {
+                                  setState(() => _payments[i] = res);
+                                }
+                              },
                               onBack: _onBack,
                               onNext: _onNext,
                             ),

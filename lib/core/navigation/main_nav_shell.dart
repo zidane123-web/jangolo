@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:jangolo/src/screens/search_screen.dart';
 import 'package:jangolo/src/screens/home_shell.dart';
-// ✅ L'IMPORT A ÉTÉ MIS À JOUR ICI
 import 'package:jangolo/features/inventory/presentation/screens/stock_screen.dart';
 import 'package:jangolo/src/screens/notifications_screen.dart';
 import 'package:jangolo/features/purchases/presentation/screens/purchases_list_screen.dart';
@@ -20,8 +18,7 @@ class _MainNavShellState extends State<MainNavShell> {
 
   late final List<Widget> _screens = <Widget>[
     const HomeShell(),
-    const SearchScreen(),
-    const StockScreen(), // ✅ Maintenant, ceci utilise la bonne version de l'écran
+    const StockScreen(),
     const PurchasesListScreen(),
     const SalesListScreen(),
     const TreasuryScreen(),
@@ -49,11 +46,6 @@ class _MainNavShellState extends State<MainNavShell> {
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard_rounded),
             label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.search),
-            selectedIcon: Icon(Icons.search_rounded),
-            label: 'Search',
           ),
           NavigationDestination(
             icon: Icon(Icons.inventory_2_outlined),

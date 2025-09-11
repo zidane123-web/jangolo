@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../settings/domain/entities/management_entities.dart';
@@ -10,6 +11,7 @@ Future<PaymentViewModel?> showAddPaymentBottomSheet({
   required double grandTotal,
   required List<PaymentViewModel> existingPayments,
   required List<PaymentMethod> paymentMethods,
+  PaymentViewModel? initialPayment,
 }) {
   return showModalBottomSheet<PaymentViewModel>(
     context: context,
@@ -20,6 +22,7 @@ Future<PaymentViewModel?> showAddPaymentBottomSheet({
         grandTotal: grandTotal,
         existingPayments: existingPayments,
         paymentMethods: paymentMethods,
+        initialPayment: initialPayment,
       );
     },
   );
@@ -30,12 +33,14 @@ class _AddPaymentBottomSheetContent extends StatefulWidget {
   final double grandTotal;
   final List<PaymentViewModel> existingPayments;
   final List<PaymentMethod> paymentMethods;
+  final PaymentViewModel? initialPayment;
 
   const _AddPaymentBottomSheetContent({
     required this.currency,
     required this.grandTotal,
     required this.existingPayments,
     required this.paymentMethods,
+    this.initialPayment,
   });
 
   @override
@@ -50,6 +55,9 @@ class _AddPaymentBottomSheetContentState
   PaymentMethod? _selectedMethod;
   late final double _totalPaidSoFar;
 
+  double? _parseAmount(String text) =>
+      double.tryParse(text.replaceAll(',', '.'));
+
   @override
   void initState() {
     super.initState();
@@ -59,6 +67,15 @@ class _AddPaymentBottomSheetContentState
         widget.existingPayments.fold(0.0, (total, p) => total + p.amount);
     if (widget.paymentMethods.isNotEmpty) {
       _selectedMethod = widget.paymentMethods.first;
+    }
+
+    if (widget.initialPayment != null) {
+      _amountController.text =
+          widget.initialPayment!.amount.toString().replaceAll('.', ',');
+      _selectedMethod = widget.paymentMethods.firstWhere(
+        (m) => m.name == widget.initialPayment!.method,
+        orElse: () => widget.paymentMethods.first,
+      );
     }
   }
 
@@ -77,7 +94,7 @@ class _AddPaymentBottomSheetContentState
         );
         return;
       }
-      final amount = double.tryParse(_amountController.text);
+      final amount = _parseAmount(_amountController.text);
       if (amount == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Montant invalide')),
@@ -145,10 +162,13 @@ class _AddPaymentBottomSheetContentState
                   ),
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                  ],
                   autofocus: true,
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requis';
-                    final parsed = double.tryParse(v) ?? 0;
+                    final parsed = _parseAmount(v) ?? 0;
                     if (parsed <= 0) return 'Montant invalide';
                     if (parsed > remaining) {
                       return 'Montant dépasse le solde restant';
@@ -177,24 +197,28 @@ class _AddPaymentBottomSheetContentState
                   runSpacing: 8,
                   children: [
                     for (final method in widget.paymentMethods)
-                      ChoiceChip(
-                        label: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(method.name),
-                            Text(
-                              _money(method.balance),
-                              style:
-                                  Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                        avatar: Icon(_iconForType(method.type)),
-                        selected: _selectedMethod?.id == method.id,
-                        onSelected: (_) =>
-                            setState(() => _selectedMethod = method),
-                      ),
+                      Builder(builder: (context) {
+                        final isEnabled = method.balance >= remaining;
+                        return ChoiceChip(
+                          label: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(method.name),
+                              Text(
+                                _money(method.balance),
+                                style:
+                                    Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                          avatar: Icon(_iconForType(method.type)),
+                          selected: _selectedMethod?.id == method.id,
+                          onSelected: isEnabled
+                              ? (_) => setState(() => _selectedMethod = method)
+                              : null,
+                        );
+                      }),
                   ],
                 ),
                 const SizedBox(height: 24),

@@ -274,6 +274,24 @@ class _CreatePurchaseScreenState extends ConsumerState<CreatePurchaseScreen> {
                               },
                               onRemovePayment: (i) =>
                                   setState(() => _payments.removeAt(i)),
+                              onEditPayment: (i) async {
+                                final gt = _items.fold<double>(
+                                    0.0, (t, item) =>
+                                        t + item.lineTotal.toDouble());
+                                final existing = [..._payments];
+                                final original = existing.removeAt(i);
+                                final res = await showAddPaymentBottomSheet(
+                                  context: context,
+                                  currency: _currency,
+                                  grandTotal: gt,
+                                  existingPayments: existing,
+                                  paymentMethods: _paymentMethods,
+                                  initialPayment: original,
+                                );
+                                if (res != null) {
+                                  setState(() => _payments[i] = res);
+                                }
+                              },
                               onBack: _onBack,
                               onNext: _onNext,
                             ),

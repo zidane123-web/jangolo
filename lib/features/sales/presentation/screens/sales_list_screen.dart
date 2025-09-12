@@ -6,95 +6,11 @@ import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:intl/intl.dart';
 
 import '../../domain/entities/sale_entity.dart';
-import '../../domain/entities/sale_line_entity.dart';
 import '../providers/sales_providers.dart';
 import 'create_sale_screen.dart';
 import 'sale_detail_screen.dart';
 
-// --- DONNÉES EN DUR POUR LA VISUALISATION ---
-List<SaleEntity> _getHardcodedSales() {
-  return [
-    SaleEntity(
-      id: 'V-001',
-      customerId: 'CUST-001',
-      customerName: 'Client Fidèle',
-      createdAt: DateTime.now(),
-      status: SaleStatus.completed,
-      items: [
-        const SaleLineEntity(
-            id: 'L1-1',
-            productId: 'P01',
-            name: 'Coque Silicone iPhone 14',
-            quantity: 1,
-            unitPrice: 15000),
-      ],
-      createdBy: 'Alice Dubois',
-      // ✅ Le paymentStatus est retiré, il sera calculé
-      hasDelivery: false,
-    ),
-    SaleEntity(
-      id: 'V-002',
-      customerId: 'CUST-002',
-      customerName: 'Nouveau Client',
-      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-      status: SaleStatus.completed,
-      items: [
-        const SaleLineEntity(
-            id: 'L2-1',
-            productId: 'P02',
-            name: 'Chargeur USB-C 20W',
-            quantity: 2,
-            unitPrice: 12500),
-        const SaleLineEntity(
-            id: 'L2-2',
-            productId: 'P03',
-            name: 'Câble USB-C vers Lightning',
-            quantity: 1,
-            unitPrice: 10000),
-      ],
-      createdBy: 'Bob Martin',
-      // ✅ Le paymentStatus est retiré, il sera calculé
-      hasDelivery: true,
-    ),
-    SaleEntity(
-      id: 'V-003',
-      customerId: 'CUST-003',
-      customerName: 'Client Pro',
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      status: SaleStatus.completed,
-      items: [
-        const SaleLineEntity(
-            id: 'L3-1',
-            productId: 'P04',
-            name: 'Protection Écran Verre Trempé',
-            quantity: 5,
-            unitPrice: 7500),
-      ],
-      createdBy: 'Alice Dubois',
-      // ✅ Le paymentStatus est retiré, il sera calculé
-      hasDelivery: false,
-    ),
-    SaleEntity(
-      id: 'V-004',
-      customerId: 'CUST-004',
-      customerName: 'Visiteur Occasionnel',
-      createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      status: SaleStatus.draft,
-      items: [
-        const SaleLineEntity(
-            id: 'L4-1',
-            productId: 'P05',
-            name: 'Écouteurs sans fil Pro',
-            quantity: 1,
-            unitPrice: 85000),
-      ],
-      createdBy: 'Carla C.',
-      // ✅ Le paymentStatus est retiré, il sera calculé
-      hasDelivery: true,
-    ),
-  ];
-}
-// --- FIN DES DONNÉES EN DUR ---
+// ✅ --- La fonction _getHardcodedSales a été supprimée ---
 
 class SalesListScreen extends ConsumerStatefulWidget {
   const SalesListScreen({super.key});
@@ -119,24 +35,8 @@ class _SalesListScreenState extends ConsumerState<SalesListScreen>
     super.dispose();
   }
 
-  String _money(double v, {String symbol = 'F'}) {
-    final format = NumberFormat.currency(
-        locale: 'fr_FR', symbol: symbol, decimalDigits: 0);
-    return format.format(v);
-  }
-
-  double _calculateTodaySales(List<SaleEntity> sales) {
-    final now = DateTime.now();
-    final startDate = DateTime(now.year, now.month, now.day);
-    final filteredSales = sales.where((sale) =>
-        sale.createdAt.isAfter(startDate) &&
-        sale.status == SaleStatus.completed);
-    return filteredSales.fold(0.0, (sum, sale) => sum + sale.grandTotal);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final salesAsync = ref.watch(filteredSalesProvider);
     const primaryColor = Color(0xFF3b82f6);
 
     return Scaffold(
@@ -173,56 +73,21 @@ class _SalesListScreenState extends ConsumerState<SalesListScreen>
             ),
           ];
         },
-        body: salesAsync.when(
-          data: (sales) {
-            final hardcodedSales = _getHardcodedSales();
-            return TabBarView(
-              controller: _tabController,
-              children: [
-                // Onglet 1: Ventes directes
-                RefreshIndicator(
-                  color: primaryColor,
-                  backgroundColor: Colors.white,
-                  strokeWidth: 3.0,
-                  onRefresh: () async => ref.invalidate(salesStreamProvider),
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(8, 16, 8, 80),
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _FilterChips(),
-                            const SizedBox(height: 16),
-                            _SalesSummaryBar(
-                              totalSales: _calculateTodaySales(hardcodedSales),
-                              moneyFormatter: _money,
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                        ),
-                      ),
-                      _SalesList(
-                          sales: hardcodedSales, moneyFormatter: _money),
-                    ],
-                  ),
+        // ✅ --- MODIFICATION PRINCIPALE : On utilise le provider de ventes réelles ---
+        body: TabBarView(
+          controller: _tabController,
+          children: [
+            const _SalesDirectTab(), // Le contenu est maintenant dans un widget dédié
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24.0),
+                child: Text(
+                  'Les ventes associées à des livraisons apparaîtront ici.',
+                  textAlign: TextAlign.center,
                 ),
-                // Onglet 2: Livraisons (placeholder)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24.0),
-                    child: Text(
-                      'Les ventes associées à des livraisons apparaîtront ici.',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Erreur: $e')),
+              ),
+            ),
+          ],
         ),
       ),
       floatingActionButton: SpeedDial(
@@ -252,7 +117,6 @@ class _SalesListScreenState extends ConsumerState<SalesListScreen>
             foregroundColor: primaryColor,
             label: 'Livraison',
             onTap: () {
-              // TODO: Naviguer vers l'écran de création de livraison
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Écran de livraison à créer')),
               );
@@ -264,7 +128,6 @@ class _SalesListScreenState extends ConsumerState<SalesListScreen>
             foregroundColor: primaryColor,
             label: 'Devis de ventes',
             onTap: () {
-              // TODO: Naviguer vers l'écran de création de devis
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Écran de devis à créer')),
               );
@@ -276,7 +139,68 @@ class _SalesListScreenState extends ConsumerState<SalesListScreen>
   }
 }
 
-// --- WIDGETS ---
+// ✅ --- NOUVEAU WIDGET POUR L'ONGLET DES VENTES ---
+class _SalesDirectTab extends ConsumerWidget {
+  const _SalesDirectTab();
+
+  String _money(double v, {String symbol = 'F'}) {
+    final format = NumberFormat.currency(
+        locale: 'fr_FR', symbol: symbol, decimalDigits: 0);
+    return format.format(v);
+  }
+
+  double _calculateTodaySales(List<SaleEntity> sales) {
+    final now = DateTime.now();
+    final startDate = DateTime(now.year, now.month, now.day);
+    final filteredSales = sales.where((sale) =>
+        sale.createdAt.isAfter(startDate) &&
+        sale.status == SaleStatus.completed);
+    return filteredSales.fold(0.0, (sum, sale) => sum + sale.grandTotal);
+  }
+  
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final salesAsync = ref.watch(filteredSalesProvider);
+    const primaryColor = Color(0xFF3b82f6);
+
+    return salesAsync.when(
+      data: (sales) {
+        return RefreshIndicator(
+          color: primaryColor,
+          backgroundColor: Colors.white,
+          strokeWidth: 3.0,
+          onRefresh: () async => ref.invalidate(salesStreamProvider),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(8, 16, 8, 80),
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _FilterChips(),
+                    const SizedBox(height: 16),
+                    _SalesSummaryBar(
+                      totalSales: _calculateTodaySales(sales),
+                      moneyFormatter: _money,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
+              _SalesList(sales: sales, moneyFormatter: _money),
+            ],
+          ),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Erreur: $e')),
+    );
+  }
+}
+
+
+// --- WIDGETS (inchangés) ---
 
 class _FilterChips extends StatelessWidget {
   @override
@@ -383,7 +307,6 @@ class _SaleCard extends StatelessWidget {
 
   const _SaleCard({required this.sale, required this.moneyFormatter});
 
-  // ✅ --- NOUVELLE FONCTION HELPER POUR TRADUIRE LE STATUT ---
   String _getPaymentStatusText(PaymentStatus status) {
     switch (status) {
       case PaymentStatus.paid:
@@ -468,7 +391,6 @@ class _SaleCard extends StatelessWidget {
                       style: const TextStyle(
                           fontSize: 12, color: Color(0xFF6B7280))),
                   const SizedBox(width: 8),
-                  // ✅ L'ENUM EST CONVERTI EN TEXTE AVANT D'ÊTRE PASSÉ AU WIDGET
                   _StatusPill(status: _getPaymentStatusText(sale.paymentStatus)),
                 ],
               ),
@@ -476,10 +398,10 @@ class _SaleCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(top: 8.0),
                   child: Row(
-                    children: [
+                    children: const [
                       Icon(Icons.local_shipping_outlined,
                           size: 16, color: Color(0xFF3b82f6)),
-                      const SizedBox(width: 4),
+                      SizedBox(width: 4),
                       Text('Livraison associée',
                           style: TextStyle(
                               fontSize: 12,

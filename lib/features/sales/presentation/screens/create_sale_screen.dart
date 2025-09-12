@@ -17,7 +17,8 @@ import '../widgets/client_picker.dart';
 import '../widgets/create_sale/article_picker.dart';
 import '../widgets/create_sale/sale_info_form.dart';
 import '../widgets/create_sale/sale_line_dialog.dart';
-import 'simple_barcode_scanner_screen.dart'; // <-- NOUVEL IMPORT
+import 'sale_line_scanner_screen.dart';
+import 'simple_barcode_scanner_screen.dart';
 import '../../../purchases/presentation/widgets/create_purchase/warehouse_supplier_picker.dart';
 
 class CreateSaleScreen extends ConsumerStatefulWidget {
@@ -54,14 +55,30 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         return;
       }
     }
-    if (_step == 1 && _items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Veuillez ajouter au moins un article à la vente.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-      return;
+    if (_step == 1) {
+      if (_items.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Veuillez ajouter au moins un article à la vente.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+      // Ensure all serialized items have scanned codes
+      for (final item in _items) {
+        if (item.isSerialized &&
+            item.scannedCodes.length != item.quantity.toInt()) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content:
+                  Text('Veuillez scanner tous les codes pour "${item.name}".'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+      }
     }
 
     if (_step < 3) {
@@ -156,11 +173,26 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
 
     if (articleMatch == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Article non trouvé'),
-            backgroundColor: Colors.orange),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Article non trouvé'),
+              backgroundColor: Colors.orange),
+        );
+      }
+      return;
+    }
+
+    // Serialized items must be added manually
+    if (articleMatch.hasSerializedUnits) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                "Cet article doit être ajouté manuellement pour définir la quantité et scanner les codes."),
+          ),
+        );
+      }
       return;
     }
 
@@ -177,6 +209,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
             name: existingLine.name,
             unitPrice: existingLine.unitPrice,
             quantity: existingLine.quantity + 1,
+            isSerialized: existingLine.isSerialized,
+            scannedCodes: existingLine.scannedCodes,
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -194,6 +228,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
               name: articleMatch.name,
               quantity: 1,
               unitPrice: articleMatch.sellPrice,
+              isSerialized: articleMatch.hasSerializedUnits,
             ),
           );
         } else {
@@ -226,6 +261,35 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     if (updatedLine != null) {
       setState(() {
         _items[index] = updatedLine;
+      });
+    }
+  }
+
+  Future<void> _scanLineCodes(int index, SaleLineEntity line) async {
+    final result = await Navigator.of(context).push<List<String>>(
+      MaterialPageRoute(
+        builder: (_) => SaleLineScannerScreen(
+          targetQuantity: line.quantity.toInt(),
+          alreadyScannedCodes: line.scannedCodes,
+          articleName: line.name ?? 'Article',
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        _items[index] = SaleLineEntity(
+          id: line.id,
+          productId: line.productId,
+          name: line.name,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          discountType: line.discountType,
+          discountValue: line.discountValue,
+          vatRate: line.vatRate,
+          isSerialized: line.isSerialized,
+          scannedCodes: result,
+        );
       });
     }
   }
@@ -367,6 +431,20 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                   itemCount: _items.length,
                   itemBuilder: (context, index) {
                     final item = _items[index];
+                    Widget tile;
+                    if (item.isSerialized) {
+                      tile = _SerializedSaleLineTile(
+                        item: item,
+                        onScan: () => _scanLineCodes(index, item),
+                        onEdit: () => _editItem(index, item),
+                      );
+                    } else {
+                      tile = _StandardSaleLineTile(
+                        item: item,
+                        onEdit: () => _editItem(index, item),
+                      );
+                    }
+
                     return Dismissible(
                       key: ValueKey(item.id),
                       direction: DismissDirection.endToStart,
@@ -384,24 +462,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                         child:
                             const Icon(Icons.delete_outline, color: Colors.white),
                       ),
-                      child: Card(
-                        elevation: 0,
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: Colors.grey.shade200),
-                        ),
-                        child: ListTile(
-                          title: Text(item.name ?? 'Article'),
-                          subtitle: Text(
-                              '${item.quantity.toStringAsFixed(0)} x ${NumberFormat.decimalPattern('fr_FR').format(item.unitPrice)} F'),
-                          trailing: Text(
-                            '${NumberFormat.decimalPattern('fr_FR').format(item.lineTotal)} F',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          onTap: () => _editItem(index, item),
-                        ),
-                      ),
+                      child: tile,
                     );
                   },
                 ),
@@ -626,6 +687,97 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     setState(() {
       _payments.add(_Payment(amount: 1000, method: 'Caisse')); // demo
     });
+  }
+}
+
+class _StandardSaleLineTile extends StatelessWidget {
+  final SaleLineEntity item;
+  final VoidCallback onEdit;
+
+  const _StandardSaleLineTile({required this.item, required this.onEdit});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: ListTile(
+        title: Text(item.name ?? 'Article'),
+        subtitle: Text(
+            '${item.quantity.toStringAsFixed(0)} x ${NumberFormat.decimalPattern('fr_FR').format(item.unitPrice)} F'),
+        trailing: Text(
+          '${NumberFormat.decimalPattern('fr_FR').format(item.lineTotal)} F',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        onTap: onEdit,
+      ),
+    );
+  }
+}
+
+class _SerializedSaleLineTile extends StatelessWidget {
+  final SaleLineEntity item;
+  final VoidCallback onScan;
+  final VoidCallback onEdit;
+
+  const _SerializedSaleLineTile({
+    required this.item,
+    required this.onScan,
+    required this.onEdit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scannedCount = item.scannedCodes.length;
+    final targetCount = item.quantity.toInt();
+    final isComplete = scannedCount == targetCount;
+    final color =
+        isComplete ? Colors.green : (scannedCount > 0 ? Colors.orange : theme.colorScheme.primary);
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          children: [
+            ListTile(
+              dense: true,
+              title: Text(item.name ?? 'Article',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(
+                  '$targetCount x ${NumberFormat.decimalPattern('fr_FR').format(item.unitPrice)} F'),
+              trailing: Text(
+                '${NumberFormat.decimalPattern('fr_FR').format(item.lineTotal)} F',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              onTap: onEdit,
+            ),
+            const Divider(height: 1),
+            ListTile(
+              dense: true,
+              leading: Icon(Icons.qr_code_2_rounded, color: color),
+              title: Text('Codes scannés: $scannedCount / $targetCount',
+                  style: TextStyle(color: color)),
+              trailing: Icon(
+                isComplete ? Icons.check_circle_outline : Icons.arrow_forward_ios_rounded,
+                color: color,
+              ),
+              onTap: onScan,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

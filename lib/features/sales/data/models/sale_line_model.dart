@@ -12,6 +12,8 @@ class SaleLineModel extends SaleLineEntity {
     super.discountType,
     super.discountValue,
     super.vatRate,
+    super.isSerialized,
+    super.scannedCodes,
   });
 
   factory SaleLineModel.fromEntity(SaleLineEntity entity) {
@@ -24,6 +26,8 @@ class SaleLineModel extends SaleLineEntity {
       discountType: entity.discountType,
       discountValue: entity.discountValue,
       vatRate: entity.vatRate,
+      isSerialized: entity.isSerialized,
+      scannedCodes: entity.scannedCodes,
     );
   }
 
@@ -38,6 +42,8 @@ class SaleLineModel extends SaleLineEntity {
           DiscountType.values.byName(json['discount_type'] as String? ?? 'none'),
       discountValue: (json['discount_value'] as num?)?.toDouble() ?? 0.0,
       vatRate: (json['vat_rate'] as num?)?.toDouble() ?? 0.0,
+      isSerialized: json['is_serialized'] as bool? ?? false,
+      scannedCodes: List<String>.from(json['scanned_codes'] ?? []),
     );
   }
 
@@ -50,6 +56,8 @@ class SaleLineModel extends SaleLineEntity {
       'discount_type': discountType.name,
       'discount_value': discountValue,
       'vat_rate': vatRate,
+      'is_serialized': isSerialized,
+      'scanned_codes': scannedCodes,
     };
   }
 }

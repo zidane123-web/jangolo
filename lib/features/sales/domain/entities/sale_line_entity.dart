@@ -12,6 +12,10 @@ class SaleLineEntity {
   final DiscountType discountType;
   final double discountValue;
   final double vatRate;
+  // Indicates whether the item is tracked by serial number
+  final bool isSerialized;
+  // List of scanned serial codes for serialized items
+  final List<String> scannedCodes;
 
   const SaleLineEntity({
     required this.id,
@@ -22,6 +26,8 @@ class SaleLineEntity {
     this.discountType = DiscountType.none,
     this.discountValue = 0.0,
     this.vatRate = 0.0,
+    this.isSerialized = false,
+    this.scannedCodes = const [],
   });
 
   double get gross => quantity * unitPrice;

@@ -9,7 +9,12 @@ import '../../domain/entities/sale_entity.dart';
 import '../../domain/entities/sale_line_entity.dart';
 import '../controllers/create_sale_controller.dart';
 import '../providers/sales_providers.dart';
-import '../widgets/styled_picker_card.dart'; // <-- IMPORT DU NOUVEAU WIDGET
+// --- NOUVEAUX IMPORTS ---
+import '../../../settings/domain/entities/management_entities.dart';
+import '../../domain/entities/client_entity.dart';
+import '../widgets/client_picker.dart';
+import '../../../purchases/presentation/widgets/create_purchase/warehouse_supplier_picker.dart';
+import '../widgets/create_sale/sale_info_form.dart';
 
 class CreateSaleScreen extends ConsumerStatefulWidget {
   const CreateSaleScreen({super.key});
@@ -19,11 +24,15 @@ class CreateSaleScreen extends ConsumerStatefulWidget {
 }
 
 class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
+  // --- GESTION D'ÉTAT AMÉLIORÉE ---
+  final _pageController = PageController();
+  final _step1FormKey = GlobalKey<FormState>();
   int _step = 0;
 
-  String? _selectedClient;
+  // Modèles de données au lieu de simples chaînes de caractères
+  ClientEntity? _selectedClient;
+  Warehouse? _selectedWarehouse;
   DateTime _selectedDate = DateTime.now();
-  String? _selectedWarehouse;
 
   final List<SaleLineEntity> _items = [];
   final List<_Payment> _payments = [];
@@ -31,175 +40,169 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   double _globalDiscount = 0.0;
   double _shippingFees = 0.0;
 
+  // --- DONNÉES FICTIVES POUR LA DÉMO ---
+  final List<ClientEntity> _dummyClients = [
+    const ClientEntity(id: 'CUST-001', name: 'Client Fidèle SARL'),
+    const ClientEntity(id: 'CUST-002', name: 'Nouveau Visiteur'),
+    const ClientEntity(id: 'CUST-003', name: 'Boutique du Coin'),
+  ];
+  final List<Warehouse> _dummyWarehouses = [
+    const Warehouse(id: 'WH-001', name: 'Entrepôt Principal'),
+    const Warehouse(id: 'WH-002', name: 'Magasin Central'),
+  ];
+  // --- FIN DES DONNÉES FICTIVES ---
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
   void _next() {
-    // Validation pour l'étape 1
+    // Validation améliorée pour l'étape 1
     if (_step == 0) {
-      if (_selectedClient == null || _selectedWarehouse == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Veuillez sélectionner un client et un entrepôt.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
+      if (!_step1FormKey.currentState!.validate()) {
+        return; // Le formulaire affiche les erreurs
       }
+    }
+    // Validation pour l'étape 2 (articles)
+    if (_step == 1 && _items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Veuillez ajouter au moins un article à la vente.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
     }
 
     if (_step < 3) {
       setState(() => _step++);
+      _pageController.nextPage(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic);
     }
   }
 
   void _back() {
     if (_step > 0) {
       setState(() => _step--);
+      _pageController.previousPage(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic);
     }
   }
+
+  // --- NOUVELLES FONCTIONS DE SÉLECTION ---
+  Future<void> _handleClientSelection() async {
+    final result = await pickClient(context: context, clients: _dummyClients);
+    if (result != null) {
+      setState(() {
+        _selectedClient = result;
+        // Si le client vient d'être créé, on l'ajoute à notre liste fictive
+        if (!_dummyClients.any((c) => c.id == result.id)) {
+          _dummyClients.add(result);
+        }
+      });
+    }
+  }
+
+  Future<void> _handleWarehouseSelection() async {
+    // On réutilise le picker des achats, mais avec nos données fictives
+    final result = await pickWarehouse(context: context, warehouses: _dummyWarehouses);
+    if (result != null) {
+      setState(() {
+        _selectedWarehouse = result;
+      });
+    }
+  }
+
+  Future<void> _handleDateSelection() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (date != null) {
+      setState(() => _selectedDate = date);
+    }
+  }
+  // --- FIN DES NOUVELLES FONCTIONS ---
 
   @override
   Widget build(BuildContext context) {
     final controller = ref.watch(createSaleControllerProvider);
     final organizationId = ref.watch(organizationIdProvider).value;
-    const backgroundColor = Colors.white; // <-- MODIFIÉ ICI
+    const backgroundColor = Colors.white;
 
-    // Le Scaffold est maintenant commun à toutes les étapes
     return Scaffold(
       backgroundColor: backgroundColor,
-      // L'AppBar est maintenant dans le corps pour correspondre au design
+      appBar: AppBar(
+        title: Text('Nouvelle Vente (${_step + 1}/4)'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
       body: SafeArea(
-        child: Column(
+        child: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
+          onPageChanged: (p) => setState(() => _step = p),
           children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 4, 16, 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  Text(
-                    'New Sale (${_step + 1}/4)',
-                    style: const TextStyle(
-                      color: Color(0xFF1C1C0D),
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(width: 48), // Pour équilibrer
-                ],
-              ),
-            ),
-            // Contenu principal qui change
-            Expanded(
-              child: IndexedStack(
-                index: _step,
-                children: [
-                  _buildStep1(),
-                  _buildStep2(),
-                  _buildStep3(),
-                  _buildStep4(controller, organizationId),
-                ],
-              ),
-            ),
+            _buildStep1(),
+            _buildStep2(),
+            _buildStep3(),
+            _buildStep4(controller, organizationId),
           ],
         ),
       ),
     );
   }
 
-  // --- ÉTAPE 1 : ENTIÈREMENT RECONSTRUITE ---
+  // --- ÉTAPE 1 : ENTIÈREMENT RECONSTRUITE AVEC LE FORMULAIRE ---
   Widget _buildStep1() {
     return Column(
       children: [
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                StyledPickerCard(
-                  label: 'Client',
-                  value: _selectedClient,
-                  placeholder: 'Select Client',
-                  icon: Icons.expand_more,
-                  onTap: () {
-                    // TODO: Ouvrir un sélecteur de client
-                    setState(() => _selectedClient = 'Client Anonyme');
-                  },
-                ),
-                const SizedBox(height: 24),
-                StyledPickerCard(
-                  label: 'Date',
-                  value:
-                      DateFormat('d MMMM yyyy', 'fr_FR').format(_selectedDate),
-                  placeholder: 'Today',
-                  icon: Icons.calendar_today,
-                  onTap: () async {
-                    final date = await showDatePicker(
-                      context: context,
-                      initialDate: _selectedDate,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (date != null) {
-                      setState(() => _selectedDate = date);
-                    }
-                  },
-                ),
-                const SizedBox(height: 24),
-                StyledPickerCard(
-                  label: 'Warehouse',
-                  value: _selectedWarehouse,
-                  placeholder: 'Select Warehouse',
-                  icon: Icons.expand_more,
-                  onTap: () {
-                    // TODO: Ouvrir un sélecteur d'entrepôt
-                    setState(() => _selectedWarehouse = 'Entrepôt Principal');
-                  },
-                ),
-              ],
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+            child: Form(
+              key: _step1FormKey,
+              child: SaleInfoForm(
+                client: _selectedClient?.name,
+                onClientTap: _handleClientSelection,
+                warehouse: _selectedWarehouse?.name,
+                onWarehouseTap: _handleWarehouseSelection,
+                saleDate: _selectedDate,
+                onSaleDateTap: _handleDateSelection,
+              ),
             ),
           ),
         ),
-        // Footer avec le bouton "Next"
+        // Footer avec le bouton "Suivant"
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: SizedBox(
-            height: 56,
             width: double.infinity,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
-                ),
-              ),
-              child: ElevatedButton(
-                onPressed: _next,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
-                  ),
-                ),
-                child: const Text(
-                  'Next',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+            child: FilledButton(
+              onPressed: _next,
+              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+              child: const Text('Suivant'),
             ),
           ),
         ),
       ],
     );
   }
+
+  // Les autres étapes (_buildStep2, _buildStep3, _buildStep4) restent
+  // globalement les mêmes, mais la sauvegarde dans _buildStep4 doit être mise à jour
+  // pour utiliser les nouveaux objets.
 
   Widget _buildStep2() {
     return Padding(
@@ -226,8 +229,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: const [
-                        Icon(Icons.shopping_basket_outlined,
-                            size: 48, color: Colors.grey),
+                        Icon(Icons.shopping_basket_outlined, size: 48, color: Colors.grey),
                         SizedBox(height: 8),
                         Text(
                           "Aucun article. Cliquez sur 'Ajouter' pour commencer.",
@@ -242,30 +244,21 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                       final item = _items[index];
                       return ListTile(
                         title: Text(item.name ?? 'Article'),
-                        subtitle: Text(
-                            '${item.quantity} x ${item.unitPrice.toStringAsFixed(0)} F'),
-                        trailing:
-                            Text('${item.lineTotal.toStringAsFixed(0)} F'),
+                        subtitle: Text('${item.quantity} x ${item.unitPrice.toStringAsFixed(0)} F'),
+                        trailing: Text('${item.lineTotal.toStringAsFixed(0)} F'),
                       );
                     },
                   ),
           ),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _back,
-                  child: const Text('Retour'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _next,
-                  child: const Text('Suivant'),
-                ),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: Row(
+              children: [
+                OutlinedButton(onPressed: _back, child: const Text('Retour')),
+                const Spacer(),
+                FilledButton(onPressed: _next, child: const Text('Suivant')),
+              ],
+            ),
           ),
         ],
       ),
@@ -288,10 +281,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Total à payer',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text('${total.toStringAsFixed(0)} F',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const Text('Total à payer', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text('${total.toStringAsFixed(0)} F', style: const TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -333,22 +324,15 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
               ],
             ),
           ),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _back,
-                  child: const Text('Retour'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _next,
-                  child: const Text('Suivant'),
-                ),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: Row(
+              children: [
+                OutlinedButton(onPressed: _back, child: const Text('Retour')),
+                const Spacer(),
+                FilledButton(onPressed: _next, child: const Text('Suivant')),
+              ],
+            ),
           ),
         ],
       ),
@@ -359,23 +343,20 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     CreateSaleController controller,
     String? organizationId,
   ) {
-    final subTotal =
-        _items.fold<double>(0, (sum, e) => sum + e.lineSubtotal);
+    final subTotal = _items.fold<double>(0, (sum, e) => sum + e.lineSubtotal);
     final discountTotal =
-        _items.fold<double>(0, (sum, e) => sum + e.lineDiscount) +
-            _globalDiscount;
+        _items.fold<double>(0, (sum, e) => sum + e.lineDiscount) + _globalDiscount;
     final taxTotal = _items.fold<double>(0, (sum, e) => sum + e.lineTax);
     final grandTotal = subTotal - _globalDiscount + taxTotal + _shippingFees;
     final paid = _payments.fold<double>(0, (sum, p) => sum + p.amount);
     final due = grandTotal - paid;
 
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text("Résumé",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text("Résumé", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Card(
             child: Padding(
@@ -414,10 +395,11 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
             onPressed: organizationId == null
                 ? null
                 : () async {
+                    if (_selectedClient == null) return;
                     final sale = SaleEntity(
                       id: DateTime.now().millisecondsSinceEpoch.toString(),
-                      customerId: _selectedClient ?? 'demo',
-                      customerName: _selectedClient,
+                      customerId: _selectedClient!.id,
+                      customerName: _selectedClient!.name,
                       createdAt: _selectedDate,
                       items: _items,
                       globalDiscount: _globalDiscount,
@@ -437,7 +419,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
             onPressed: () {},
             child: const Text('Enregistrer comme Brouillon'),
           ),
-          const Spacer(),
+          const SizedBox(height: 24),
           OutlinedButton(
             onPressed: _back,
             child: const Text('Retour'),

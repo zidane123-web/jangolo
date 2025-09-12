@@ -79,7 +79,7 @@ final saleDetailProvider =
 /// Controller used to create a new sale
 final createSaleControllerProvider = Provider<CreateSaleController>((ref) {
   final repository = ref.watch(salesRepositoryProvider);
-  return CreateSaleController(repository);
+  return CreateSaleController(repository, FirebaseFirestore.instance);
 });
 
 /// Search query for filtering sales by customer name

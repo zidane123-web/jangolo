@@ -3,12 +3,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../core/providers/auth_providers.dart';
 import '../../../inventory/presentation/providers/inventory_providers.dart';
 import '../../../settings/domain/entities/management_entities.dart';
 import '../../../settings/presentation/providers/settings_providers.dart';
 import '../../domain/entities/client_entity.dart';
+import '../../domain/entities/payment_entity.dart';
 import '../../domain/entities/sale_entity.dart';
 import '../../domain/entities/sale_line_entity.dart';
 import '../controllers/create_sale_controller.dart';
@@ -41,11 +43,11 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   DateTime _selectedDate = DateTime.now();
 
   final List<SaleLineEntity> _items = [];
-  // ✅ MODIFICATION: La liste utilise maintenant le PaymentViewModel
   final List<PaymentViewModel> _payments = [];
 
   double _globalDiscount = 0.0;
   double _shippingFees = 0.0;
+  bool _isSaving = false;
 
   bool get _isFormDirty {
     return _selectedClient != null ||
@@ -302,9 +304,75 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   }
   // --- FIN ---
 
+  Future<void> _save(SaleStatus status) async {
+    if (_selectedClient == null || _selectedWarehouse == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Le client et l'entrepôt sont requis."),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      final organizationId = ref.read(organizationIdProvider).value;
+      if (organizationId == null) throw Exception("Organisation non trouvée.");
+
+      // Conversion des PaymentViewModel en PaymentEntity pour la sauvegarde
+      final paymentEntities = _payments.map((vm) {
+        return PaymentEntity(
+          id: const Uuid().v4(),
+          amount: vm.amountPaid,
+          date: _selectedDate,
+          paymentMethod: vm.methodIn,
+        );
+      }).toList();
+
+      final sale = SaleEntity(
+        id: const Uuid().v4(),
+        customerId: _selectedClient!.id,
+        customerName: _selectedClient!.name,
+        createdAt: _selectedDate,
+        status: status,
+        items: _items,
+        payments: paymentEntities, // On sauvegarde les paiements nets
+        globalDiscount: _globalDiscount,
+        shippingFees: _shippingFees,
+        createdBy: ref.read(firebaseAuthProvider).currentUser?.uid,
+      );
+
+      final controller = ref.read(createSaleControllerProvider);
+      await controller.saveSale(
+        organizationId: organizationId,
+        sale: sale,
+        payments: _payments, // On passe les ViewModel pour la logique de trésorerie
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(status == SaleStatus.draft
+                ? 'Brouillon enregistré'
+                : 'Vente validée !'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final controller = ref.watch(createSaleControllerProvider);
     final organizationId = ref.watch(organizationIdProvider).value;
     const backgroundColor = Colors.white;
 
@@ -312,7 +380,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     final warehousesAsync = ref.watch(warehousesProvider);
 
     return PopScope(
-      canPop: !_isFormDirty,
+      canPop: !_isFormDirty || _isSaving,
       onPopInvoked: (didPop) async {
         if (didPop) return;
         final shouldPop = await confirmSaleExit(context);
@@ -349,9 +417,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                 children: [
                   _buildStep1(clients, warehouses),
                   _buildStep2(),
-                  // ✅ L'étape 3 appelle la nouvelle méthode de build
                   _buildStep3(ref.watch(paymentMethodsProvider).value ?? []),
-                  _buildStep4(controller, organizationId),
+                  _buildStep4(organizationId),
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -569,7 +636,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                           leading: const Icon(Icons.check_circle_outline,
                               color: Colors.green),
                           title: Text(_money(payment.amountPaid)),
-                          subtitle: Text('Via: ${payment.method.name}'),
+                          subtitle: Text('Via: ${payment.methodIn.name}'),
                           trailing: IconButton(
                             icon: Icon(Icons.delete_outline,
                                 color: theme.colorScheme.error),
@@ -599,10 +666,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 
-  Widget _buildStep4(
-    CreateSaleController controller,
-    String? organizationId,
-  ) {
+  Widget _buildStep4(String? organizationId) {
+    // ... Calculs de totaux inchangés ...
     final subTotal =
         _items.fold<double>(0, (sum, e) => sum + e.lineSubtotal);
     final discountTotal =
@@ -635,56 +700,39 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                   const Divider(),
                   _summaryRow('Total général', grandTotal, bold: true),
                   _summaryRow('Total payé', paid),
-                  _summaryRow('Solde dû', due),
+                  _summaryRow('Solde dû', due,
+                      color: due > 0.01 ? Colors.red : Colors.green),
                 ],
               ),
             ),
           ),
-          TextField(
-            decoration: const InputDecoration(labelText: 'Remise globale'),
-            keyboardType: TextInputType.number,
-            onChanged: (value) {
-              setState(() => _globalDiscount = double.tryParse(value) ?? 0.0);
-            },
-          ),
-          TextField(
-            decoration: const InputDecoration(labelText: 'Frais de livraison'),
-            keyboardType: TextInputType.number,
-            onChanged: (value) {
-              setState(() => _shippingFees = double.tryParse(value) ?? 0.0);
-            },
-          ),
           const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: organizationId == null
-                ? null
-                : () async {
-                    if (_selectedClient == null) return;
-                    final sale = SaleEntity(
-                      id: DateTime.now().millisecondsSinceEpoch.toString(),
-                      customerId: _selectedClient!.id,
-                      customerName: _selectedClient!.name,
-                      createdAt: _selectedDate,
-                      items: _items,
-                      globalDiscount: _globalDiscount,
-                      shippingFees: _shippingFees,
-                      // TODO: Convertir PaymentViewModel en PaymentEntity
-                      payments: const [], 
-                    );
-                    await controller.saveSale(
-                      organizationId: organizationId,
-                      sale: sale,
-                    );
-                    if (mounted) {
-                      Navigator.of(context).pop();
-                    }
-                  },
-            child: const Text('Valider la Vente'),
-          ),
-          TextButton(
-            onPressed: () {},
-            child: const Text('Enregistrer comme Brouillon'),
-          ),
+          // --- Les boutons de sauvegarde sont maintenant ici ---
+          if (_isSaving)
+            const Center(child: CircularProgressIndicator())
+          else
+            Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => _save(SaleStatus.completed),
+                    style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16)),
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Valider la Vente'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => _save(SaleStatus.draft),
+                    child: const Text('Enregistrer comme brouillon'),
+                  ),
+                ),
+              ],
+            ),
           const SizedBox(height: 24),
           OutlinedButton(
             onPressed: _back,

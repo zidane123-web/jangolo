@@ -9,9 +9,9 @@ class PaymentModel extends PaymentEntity {
     required super.id,
     required super.amount,
     required super.date,
-    required super.paymentMethod,
+    required super.paymentMethod, // ✅ Ligne corrigée
     super.reference,
-  }) : super(paymentMethod: paymentMethod);
+  });
 
   factory PaymentModel.fromEntity(PaymentEntity entity) {
     return PaymentModel(

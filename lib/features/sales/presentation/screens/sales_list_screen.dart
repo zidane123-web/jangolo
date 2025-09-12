@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_speed_dial/flutter_speed_dial.dart'; // <-- 1. IMPORT DU NOUVEAU PACKAGE
+import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:intl/intl.dart';
 
 import '../../domain/entities/sale_entity.dart';
@@ -29,7 +29,7 @@ List<SaleEntity> _getHardcodedSales() {
             unitPrice: 15000),
       ],
       createdBy: 'Alice Dubois',
-      paymentStatus: 'Payé',
+      // ✅ Le paymentStatus est retiré, il sera calculé
       hasDelivery: false,
     ),
     SaleEntity(
@@ -53,7 +53,7 @@ List<SaleEntity> _getHardcodedSales() {
             unitPrice: 10000),
       ],
       createdBy: 'Bob Martin',
-      paymentStatus: 'Partiel',
+      // ✅ Le paymentStatus est retiré, il sera calculé
       hasDelivery: true,
     ),
     SaleEntity(
@@ -71,7 +71,7 @@ List<SaleEntity> _getHardcodedSales() {
             unitPrice: 7500),
       ],
       createdBy: 'Alice Dubois',
-      paymentStatus: 'Non Payé',
+      // ✅ Le paymentStatus est retiré, il sera calculé
       hasDelivery: false,
     ),
     SaleEntity(
@@ -89,7 +89,7 @@ List<SaleEntity> _getHardcodedSales() {
             unitPrice: 85000),
       ],
       createdBy: 'Carla C.',
-      paymentStatus: 'En attente',
+      // ✅ Le paymentStatus est retiré, il sera calculé
       hasDelivery: true,
     ),
   ];
@@ -225,7 +225,6 @@ class _SalesListScreenState extends ConsumerState<SalesListScreen>
           error: (e, _) => Center(child: Text('Erreur: $e')),
         ),
       ),
-      // --- 2. REMPLACEMENT DU BOUTON FLOTTANT ---
       floatingActionButton: SpeedDial(
         icon: Icons.add,
         activeIcon: Icons.close,
@@ -273,7 +272,6 @@ class _SalesListScreenState extends ConsumerState<SalesListScreen>
           ),
         ],
       ),
-      // --- FIN DE LA MODIFICATION ---
     );
   }
 }
@@ -385,6 +383,18 @@ class _SaleCard extends StatelessWidget {
 
   const _SaleCard({required this.sale, required this.moneyFormatter});
 
+  // ✅ --- NOUVELLE FONCTION HELPER POUR TRADUIRE LE STATUT ---
+  String _getPaymentStatusText(PaymentStatus status) {
+    switch (status) {
+      case PaymentStatus.paid:
+        return 'Payé';
+      case PaymentStatus.partial:
+        return 'Partiel';
+      case PaymentStatus.unpaid:
+        return 'Non payé';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -458,7 +468,8 @@ class _SaleCard extends StatelessWidget {
                       style: const TextStyle(
                           fontSize: 12, color: Color(0xFF6B7280))),
                   const SizedBox(width: 8),
-                  _StatusPill(status: sale.paymentStatus ?? 'N/A'),
+                  // ✅ L'ENUM EST CONVERTI EN TEXTE AVANT D'ÊTRE PASSÉ AU WIDGET
+                  _StatusPill(status: _getPaymentStatusText(sale.paymentStatus)),
                 ],
               ),
               if (sale.hasDelivery == true)

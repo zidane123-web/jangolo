@@ -1,5 +1,6 @@
 // lib/features/sales/presentation/screens/create_sale_screen.dart
 
+import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ NOUVEL IMPORT
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,7 +47,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   final List<SaleLineEntity> _items = [];
   final List<PaymentViewModel> _payments = [];
 
-  // ✅ CONTRÔLEURS POUR LES CHAMPS DE L'ÉTAPE 4
   late final TextEditingController _globalDiscountController;
   late final TextEditingController _shippingFeesController;
   bool _isSaving = false;
@@ -68,11 +68,12 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   @override
   void dispose() {
     _pageController.dispose();
-    _globalDiscountController.dispose(); // ✅ Libérer la mémoire
-    _shippingFeesController.dispose(); // ✅ Libérer la mémoire
+    _globalDiscountController.dispose();
+    _shippingFeesController.dispose();
     super.dispose();
   }
 
+  // ... (Les autres méthodes comme _next, _back, _addItem etc. restent inchangées)
   void _next() {
     if (_step == 0) {
       if (!_step1FormKey.currentState!.validate()) {
@@ -245,6 +246,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     }
   }
 
+
+  // ✅ --- MÉTHODE DE SAUVEGARDE ENTIÈREMENT MISE À JOUR ---
   Future<void> _save(SaleStatus status) async {
     if (_selectedClient == null || _selectedWarehouse == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -258,8 +261,26 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
 
     try {
       final organizationId = ref.read(organizationIdProvider).value;
-      if (organizationId == null) throw Exception("Organisation non trouvée.");
+      final currentUser = ref.read(firebaseAuthProvider).currentUser;
 
+      if (organizationId == null) throw Exception("Organisation non trouvée.");
+      if (currentUser == null) throw Exception("Utilisateur non connecté.");
+
+      // 1. Récupérer le nom de l'utilisateur
+      final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(currentUser.uid).get();
+      final userData = userDoc.data();
+      final createdByName = (userData == null) 
+          ? null 
+          : '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
+
+      // 2. Calculer les totaux
+      final subTotal = _items.fold<double>(0, (sum, e) => e.lineSubtotal);
+      final discount = double.tryParse(_globalDiscountController.text) ?? 0.0;
+      final shipping = double.tryParse(_shippingFeesController.text) ?? 0.0;
+      final taxTotal = _items.fold<double>(0, (sum, e) => e.lineTax);
+      final grandTotal = subTotal - discount + taxTotal + shipping;
+
+      // 3. Préparer les entités
       final paymentEntities = _payments.map((vm) {
         return PaymentEntity(
           id: const Uuid().v4(),
@@ -268,9 +289,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
           paymentMethod: vm.methodIn,
         );
       }).toList();
-      
-      final globalDiscount = double.tryParse(_globalDiscountController.text) ?? 0.0;
-      final shippingFees = double.tryParse(_shippingFeesController.text) ?? 0.0;
 
       final sale = SaleEntity(
         id: const Uuid().v4(),
@@ -280,11 +298,14 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         status: status,
         items: _items,
         payments: paymentEntities,
-        globalDiscount: globalDiscount,
-        shippingFees: shippingFees,
-        createdBy: ref.read(firebaseAuthProvider).currentUser?.uid,
+        globalDiscount: discount,
+        shippingFees: shipping,
+        createdBy: currentUser.uid,
+        createdByName: createdByName, // On passe le nom récupéré
+        grandTotal: grandTotal,       // On passe le total calculé
       );
 
+      // 4. Appeler le contrôleur
       final controller = ref.read(createSaleControllerProvider);
       await controller.saveSale(
         organizationId: organizationId,
@@ -359,7 +380,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                 children: [
                   _buildStep1(clients, warehouses),
                   _buildStep2(),
-                  _buildStep3(ref.watch(paymentMethodsProvider).value ?? []),
+                  _buildStep3(),
                   _buildStep4(),
                 ],
               ),
@@ -375,6 +396,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   }
 
   Widget _buildStep1(List<ClientEntity> clients, List<Warehouse> warehouses) {
+    // ... Le contenu reste identique
     return Column(
       children: [
         Expanded(
@@ -411,7 +433,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   }
 
   Widget _buildStep2() {
-    final subtotal = _items.fold<double>(0, (sum, item) => sum + item.lineTotal);
+    // ... Le contenu reste identique
+     final subtotal = _items.fold<double>(0, (sum, item) => sum + item.lineTotal);
 
     return Column(
       children: [
@@ -520,7 +543,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 
-  Widget _buildStep3(List<PaymentMethod> paymentMethods) {
+  Widget _buildStep3() {
+    // ... Le contenu reste identique
     final theme = Theme.of(context);
     final total = _items.fold<double>(0, (sum, e) => sum + e.lineTotal);
     final paid =
@@ -607,15 +631,13 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 
-  // ✅ --- ÉTAPE 4 ENTIÈREMENT REFAITE ---
   Widget _buildStep4() {
-    // On met à jour les totaux à chaque rebuild pour refléter les changements
-    // dans les champs de texte pour la remise et les frais.
-    final subTotal = _items.fold<double>(0, (sum, e) => sum + e.lineSubtotal);
+    final subTotal = _items.fold<double>(0, (sum, e) => e.lineSubtotal);
+    final taxTotal = _items.fold<double>(0, (sum, e) => e.lineTax);
     final discount = double.tryParse(_globalDiscountController.text) ?? 0.0;
     final shipping = double.tryParse(_shippingFeesController.text) ?? 0.0;
 
-    final grandTotal = subTotal - discount + shipping;
+    final grandTotal = subTotal - discount + taxTotal + shipping;
     final paid = _payments.fold<double>(0, (sum, p) => sum + p.amountPaid);
     final due = grandTotal - paid;
 
@@ -628,7 +650,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
               style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 16),
           
-          // --- Champs pour la remise et les frais ---
           Row(
             children: [
               Expanded(
@@ -641,7 +662,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                   ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onChanged: (_) => setState(() {}), // Force le rebuild
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
               const SizedBox(width: 16),
@@ -655,14 +676,13 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                   ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                   onChanged: (_) => setState(() {}), // Force le rebuild
+                   onChanged: (_) => setState(() {}),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 24),
           
-          // --- Carte de résumé ---
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(

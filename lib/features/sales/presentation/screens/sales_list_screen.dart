@@ -10,8 +10,6 @@ import '../providers/sales_providers.dart';
 import 'create_sale_screen.dart';
 import 'sale_detail_screen.dart';
 
-// ✅ --- La fonction _getHardcodedSales a été supprimée ---
-
 class SalesListScreen extends ConsumerStatefulWidget {
   const SalesListScreen({super.key});
 
@@ -73,11 +71,10 @@ class _SalesListScreenState extends ConsumerState<SalesListScreen>
             ),
           ];
         },
-        // ✅ --- MODIFICATION PRINCIPALE : On utilise le provider de ventes réelles ---
         body: TabBarView(
           controller: _tabController,
           children: [
-            const _SalesDirectTab(), // Le contenu est maintenant dans un widget dédié
+            const _SalesDirectTab(),
             const Center(
               child: Padding(
                 padding: EdgeInsets.all(24.0),
@@ -139,7 +136,6 @@ class _SalesListScreenState extends ConsumerState<SalesListScreen>
   }
 }
 
-// ✅ --- NOUVEAU WIDGET POUR L'ONGLET DES VENTES ---
 class _SalesDirectTab extends ConsumerWidget {
   const _SalesDirectTab();
 
@@ -198,9 +194,6 @@ class _SalesDirectTab extends ConsumerWidget {
     );
   }
 }
-
-
-// --- WIDGETS (inchangés) ---
 
 class _FilterChips extends StatelessWidget {
   @override
@@ -353,6 +346,7 @@ class _SaleCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  // ✅ CORRECTION: Affiche le grandTotal stocké
                   Text(
                     moneyFormatter(sale.grandTotal, symbol: 'F'),
                     style: const TextStyle(
@@ -363,27 +357,30 @@ class _SaleCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              ...sale.items.map((line) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4.0),
-                    child: Row(children: [
-                      Text('${line.quantity.toStringAsFixed(0)}x',
-                          style: const TextStyle(color: Color(0xFF6B7280))),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(line.name ?? 'Produit',
+              if (sale.items.isNotEmpty) ...[ // Affiche les items seulement s'ils sont chargés
+                ...sale.items.map((line) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4.0),
+                      child: Row(children: [
+                        Text('${line.quantity.toStringAsFixed(0)}x',
                             style: const TextStyle(color: Color(0xFF6B7280))),
-                      ),
-                      Text(moneyFormatter(line.lineTotal, symbol: 'F'),
-                          style: const TextStyle(color: Color(0xFF6B7280))),
-                    ]),
-                  )),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(line.name ?? 'Produit',
+                              style: const TextStyle(color: Color(0xFF6B7280))),
+                        ),
+                        Text(moneyFormatter(line.lineTotal, symbol: 'F'),
+                            style: const TextStyle(color: Color(0xFF6B7280))),
+                      ]),
+                    )),
+              ],
               const Divider(height: 20),
               Row(
                 children: [
                   const Icon(Icons.person_outline,
                       size: 16, color: Color(0xFF6B7280)),
                   const SizedBox(width: 4),
-                  Text(sale.createdBy ?? 'N/A',
+                  // ✅ CORRECTION: Affiche le nom du créateur
+                  Text(sale.createdByName ?? 'N/A',
                       style: const TextStyle(
                           fontSize: 12, color: Color(0xFF6B7280))),
                   const Spacer(),

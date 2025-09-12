@@ -1,13 +1,36 @@
 // lib/features/sales/presentation/widgets/create_sale/article_picker.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../../../../inventory/domain/entities/article_entity.dart';
 
+import '../../../../../core/providers/auth_providers.dart'; // ✅ IMPORT AJOUTÉ
+import '../../../../inventory/domain/entities/article_entity.dart';
+import '../../../../inventory/presentation/providers/inventory_providers.dart';
+
+// Provider pour le texte de la recherche
+final articleSearchQueryProvider = StateProvider.autoDispose<String>((ref) => '');
+
+// Provider qui exécute la recherche et retourne le flux de résultats
+final articleSearchResultsProvider =
+    StreamProvider.autoDispose<List<ArticleEntity>>((ref) {
+  final query = ref.watch(articleSearchQueryProvider);
+  final organizationId = ref.watch(organizationIdProvider).value;
+
+  // Si la recherche est vide ou si on n'a pas l'ID de l'orga, on ne retourne rien
+  if (query.isEmpty || organizationId == null) {
+    return Stream.value([]);
+  }
+
+  // ✅ --- CORRECTION APPLIQUÉE ICI ---
+  // 1. On récupère le "use case" (la télécommande) pour la recherche
+  final searchUseCase = ref.watch(searchArticlesProvider(query));
+  // 2. On appelle le "use case" avec les bons paramètres pour obtenir le flux
+  return searchUseCase(organizationId: organizationId, query: query);
+});
 
 Future<ArticleEntity?> showArticlePicker({
   required BuildContext context,
-  required List<ArticleEntity> articles,
 }) {
   return showModalBottomSheet<ArticleEntity>(
     context: context,
@@ -19,52 +42,23 @@ Future<ArticleEntity?> showArticlePicker({
     ),
     showDragHandle: true,
     builder: (context) {
-      return _ArticlePickerSheet(articles: articles);
+      return const _ArticlePickerSheet();
     },
   );
 }
 
-class _ArticlePickerSheet extends StatefulWidget {
-  final List<ArticleEntity> articles;
-
-  const _ArticlePickerSheet({required this.articles});
-
-  @override
-  State<_ArticlePickerSheet> createState() => _ArticlePickerSheetState();
-}
-
-class _ArticlePickerSheetState extends State<_ArticlePickerSheet> {
-  late final TextEditingController _searchController;
-  late List<ArticleEntity> _filteredItems;
-
-  @override
-  void initState() {
-    super.initState();
-    _searchController = TextEditingController();
-    _filteredItems = widget.articles;
-    _searchController.addListener(() {
-      final query = _searchController.text.toLowerCase();
-      setState(() {
-        _filteredItems = widget.articles
-            .where((item) => item.name.toLowerCase().contains(query))
-            .toList();
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
+class _ArticlePickerSheet extends ConsumerWidget {
+  const _ArticlePickerSheet();
 
   String _money(double v) =>
       NumberFormat.currency(locale: 'fr_FR', symbol: 'F', decimalDigits: 0)
           .format(v);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final searchResults = ref.watch(articleSearchResultsProvider);
+
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -78,7 +72,9 @@ class _ArticlePickerSheetState extends State<_ArticlePickerSheet> {
           Text('Sélectionner un article', style: theme.textTheme.titleLarge),
           const SizedBox(height: 16),
           TextField(
-            controller: _searchController,
+            onChanged: (query) =>
+                ref.read(articleSearchQueryProvider.notifier).state = query,
+            autofocus: true,
             decoration: InputDecoration(
               hintText: 'Rechercher par nom...',
               prefixIcon: const Icon(Icons.search),
@@ -92,37 +88,54 @@ class _ArticlePickerSheetState extends State<_ArticlePickerSheet> {
           ),
           const SizedBox(height: 16),
           Flexible(
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: _filteredItems.length,
-              itemBuilder: (context, index) {
-                final article = _filteredItems[index];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(
-                        color: theme.colorScheme.outlineVariant.withAlpha(153)),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      radius: 20,
-                      backgroundColor:
-                          theme.colorScheme.primary.withOpacity(0.1),
-                      child: const Icon(Icons.inventory_2_outlined, size: 20),
-                    ),
-                    title: Text(article.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text('Stock: ${article.totalQuantity}'),
-                    trailing: Text(
-                      _money(article.sellPrice),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    onTap: () => Navigator.pop(context, article),
-                  ),
+            child: searchResults.when(
+              data: (articles) {
+                if (articles.isEmpty &&
+                    ref.read(articleSearchQueryProvider).isEmpty) {
+                  return const Center(
+                      child: Text("Commencez à taper pour rechercher..."));
+                }
+                if (articles.isEmpty) {
+                  return const Center(child: Text("Aucun article trouvé."));
+                }
+                return ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: articles.length,
+                  itemBuilder: (context, index) {
+                    final article = articles[index];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(
+                            color: theme.colorScheme.outlineVariant
+                                .withAlpha(153)),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          radius: 20,
+                          backgroundColor:
+                              theme.colorScheme.primary.withOpacity(0.1),
+                          child:
+                              const Icon(Icons.inventory_2_outlined, size: 20),
+                        ),
+                        title: Text(article.name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text('Stock: ${article.totalQuantity}'),
+                        trailing: Text(
+                          _money(article.sellPrice),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        onTap: () => Navigator.pop(context, article),
+                      ),
+                    );
+                  },
                 );
               },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, s) => Center(child: Text("Erreur: $e")),
             ),
           ),
         ],

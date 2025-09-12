@@ -13,6 +13,12 @@ abstract class InventoryRemoteDataSource {
 
   Stream<List<MovementModel>> getMovements(
       String organizationId, String articleId);
+
+  /// Searches articles by name matching the given query.
+  Stream<List<ArticleModel>> searchArticles({
+    required String organizationId,
+    required String query,
+  });
 }
 
 class InventoryRemoteDataSourceImpl implements InventoryRemoteDataSource {
@@ -39,6 +45,31 @@ class InventoryRemoteDataSourceImpl implements InventoryRemoteDataSource {
       // In a real application, use a logger
       print('Erreur lors de la récupération des articles: $e');
       throw Exception('Impossible de charger les articles.');
+    }
+  }
+
+  @override
+  Stream<List<ArticleModel>> searchArticles({
+    required String organizationId,
+    required String query,
+  }) {
+    try {
+      final snapshots = firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('inventory')
+          .orderBy('name')
+          .where('name', isGreaterThanOrEqualTo: query)
+          .where('name', isLessThanOrEqualTo: '$query\uf8ff')
+          .limit(15)
+          .snapshots();
+
+      return snapshots.map((snapshot) {
+        return snapshot.docs.map((doc) => ArticleModel.fromSnapshot(doc)).toList();
+      });
+    } catch (e) {
+      print('Erreur lors de la recherche d\'articles: $e');
+      throw Exception('Impossible de rechercher les articles.');
     }
   }
 

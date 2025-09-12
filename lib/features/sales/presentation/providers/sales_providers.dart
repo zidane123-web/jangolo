@@ -2,11 +2,16 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../domain/entities/client_entity.dart';
 import '../../domain/entities/sale_entity.dart';
 
 import '../../../../core/providers/auth_providers.dart';
 import '../../data/datasources/remote_datasource.dart';
+import '../../data/repositories/client_repository_impl.dart';
 import '../../data/repositories/sales_repository_impl.dart';
+import '../../domain/repositories/client_repository.dart';
+import '../../domain/usecases/add_client.dart';
+import '../../domain/usecases/get_clients.dart';
 import '../../domain/usecases/get_all_sales.dart';
 import '../../domain/usecases/get_sale_details.dart';
 import '../controllers/create_sale_controller.dart';
@@ -17,6 +22,35 @@ final salesRepositoryProvider = Provider<SalesRepositoryImpl>((ref) {
       SalesRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
   return SalesRepositoryImpl(remoteDataSource: remoteDataSource);
 });
+
+// --- NEW PROVIDERS FOR CLIENTS ---
+
+/// Provider for the client repository
+final clientRepositoryProvider = Provider<ClientRepository>((ref) {
+  final remoteDataSource =
+      SalesRemoteDataSourceImpl(firestore: FirebaseFirestore.instance);
+  return ClientRepositoryImpl(remoteDataSource: remoteDataSource);
+});
+
+/// Stream of all clients for the current organization
+final clientsStreamProvider = StreamProvider<List<ClientEntity>>((ref) {
+  final organizationId = ref.watch(organizationIdProvider).value;
+  final repository = ref.watch(clientRepositoryProvider);
+
+  if (organizationId == null) {
+    return Stream.value([]);
+  }
+  final getClients = GetClients(repository);
+  return getClients(organizationId);
+});
+
+/// Use case for adding a client
+final addClientProvider = Provider<AddClient>((ref) {
+  final repository = ref.watch(clientRepositoryProvider);
+  return AddClient(repository);
+});
+
+// --- END NEW PROVIDERS ---
 
 /// Stream of all sales for the current organization
 final salesStreamProvider = StreamProvider<List<SaleEntity>>((ref) {

@@ -10,6 +10,7 @@ import '../../domain/entities/sale_line_entity.dart';
 import '../controllers/create_sale_controller.dart';
 import '../providers/sales_providers.dart';
 // --- NOUVEAUX IMPORTS ---
+import '../../../settings/presentation/providers/settings_providers.dart'; // <-- NOUVEL IMPORT
 import '../../../settings/domain/entities/management_entities.dart';
 import '../../domain/entities/client_entity.dart';
 import '../widgets/client_picker.dart';
@@ -39,18 +40,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
 
   double _globalDiscount = 0.0;
   double _shippingFees = 0.0;
-
-  // --- DONNÉES FICTIVES POUR LA DÉMO ---
-  final List<ClientEntity> _dummyClients = [
-    const ClientEntity(id: 'CUST-001', name: 'Client Fidèle SARL'),
-    const ClientEntity(id: 'CUST-002', name: 'Nouveau Visiteur'),
-    const ClientEntity(id: 'CUST-003', name: 'Boutique du Coin'),
-  ];
-  final List<Warehouse> _dummyWarehouses = [
-    const Warehouse(id: 'WH-001', name: 'Entrepôt Principal'),
-    const Warehouse(id: 'WH-002', name: 'Magasin Central'),
-  ];
-  // --- FIN DES DONNÉES FICTIVES ---
 
   @override
   void dispose() {
@@ -94,22 +83,17 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   }
 
   // --- NOUVELLES FONCTIONS DE SÉLECTION ---
-  Future<void> _handleClientSelection() async {
-    final result = await pickClient(context: context, clients: _dummyClients);
+  Future<void> _handleClientSelection(List<ClientEntity> clients) async {
+    final result = await pickClient(context: context, clients: clients);
     if (result != null) {
       setState(() {
         _selectedClient = result;
-        // Si le client vient d'être créé, on l'ajoute à notre liste fictive
-        if (!_dummyClients.any((c) => c.id == result.id)) {
-          _dummyClients.add(result);
-        }
       });
     }
   }
 
-  Future<void> _handleWarehouseSelection() async {
-    // On réutilise le picker des achats, mais avec nos données fictives
-    final result = await pickWarehouse(context: context, warehouses: _dummyWarehouses);
+  Future<void> _handleWarehouseSelection(List<Warehouse> warehouses) async {
+    final result = await pickWarehouse(context: context, warehouses: warehouses);
     if (result != null) {
       setState(() {
         _selectedWarehouse = result;
@@ -136,6 +120,11 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     final organizationId = ref.watch(organizationIdProvider).value;
     const backgroundColor = Colors.white;
 
+    // --- ON RÉCUPÈRE LES DONNÉES RÉELLES ---
+    final clientsAsync = ref.watch(clientsStreamProvider);
+    final warehousesAsync = ref.watch(warehousesProvider);
+    // --- FIN ---
+
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
@@ -149,23 +138,33 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         ),
       ),
       body: SafeArea(
-        child: PageView(
-          controller: _pageController,
-          physics: const NeverScrollableScrollPhysics(),
-          onPageChanged: (p) => setState(() => _step = p),
-          children: [
-            _buildStep1(),
-            _buildStep2(),
-            _buildStep3(),
-            _buildStep4(controller, organizationId),
-          ],
+        // --- ON GÈRE LES ÉTATS DE CHARGEMENT ET D'ERREUR ---
+        child: clientsAsync.when(
+          data: (clients) => warehousesAsync.when(
+            data: (warehouses) => PageView(
+              controller: _pageController,
+              physics: const NeverScrollableScrollPhysics(),
+              onPageChanged: (p) => setState(() => _step = p),
+              children: [
+                _buildStep1(clients, warehouses),
+                _buildStep2(),
+                _buildStep3(),
+                _buildStep4(controller, organizationId),
+              ],
+            ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, s) => Center(child: Text("Erreur entrepôts: $e")),
+          ),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, s) => Center(child: Text("Erreur clients: $e")),
         ),
+        // --- FIN ---
       ),
     );
   }
 
   // --- ÉTAPE 1 : ENTIÈREMENT RECONSTRUITE AVEC LE FORMULAIRE ---
-  Widget _buildStep1() {
+  Widget _buildStep1(List<ClientEntity> clients, List<Warehouse> warehouses) {
     return Column(
       children: [
         Expanded(
@@ -175,16 +174,15 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
               key: _step1FormKey,
               child: SaleInfoForm(
                 client: _selectedClient?.name,
-                onClientTap: _handleClientSelection,
+                onClientTap: () => _handleClientSelection(clients),
                 warehouse: _selectedWarehouse?.name,
-                onWarehouseTap: _handleWarehouseSelection,
+                onWarehouseTap: () => _handleWarehouseSelection(warehouses),
                 saleDate: _selectedDate,
                 onSaleDateTap: _handleDateSelection,
               ),
             ),
           ),
         ),
-        // Footer avec le bouton "Suivant"
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: SizedBox(

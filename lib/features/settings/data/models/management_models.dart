@@ -75,6 +75,15 @@ class PaymentMethodModel extends PaymentMethod {
     );
   }
 
+  factory PaymentMethodModel.fromJson(Map<String, dynamic> json) {
+    return PaymentMethodModel(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      type: json['type'] as String? ?? 'cash',
+      balance: (json['balance'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'name': name,

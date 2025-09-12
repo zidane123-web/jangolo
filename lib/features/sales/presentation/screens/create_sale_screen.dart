@@ -12,10 +12,12 @@ import '../../domain/entities/client_entity.dart';
 import '../../domain/entities/sale_entity.dart';
 import '../../domain/entities/sale_line_entity.dart';
 import '../controllers/create_sale_controller.dart';
+import '../models/payment_view_model.dart';
 import '../providers/sales_providers.dart';
 import '../widgets/client_picker.dart';
+import '../widgets/create_sale/add_payment_dialog.dart';
 import '../widgets/create_sale/article_picker.dart';
-import '../widgets/create_sale/confirm_exit_dialog.dart'; // ✅ NOUVEL IMPORT
+import '../widgets/create_sale/confirm_exit_dialog.dart';
 import '../widgets/create_sale/sale_info_form.dart';
 import '../widgets/create_sale/sale_line_dialog.dart';
 import 'sale_line_scanner_screen.dart';
@@ -39,19 +41,18 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   DateTime _selectedDate = DateTime.now();
 
   final List<SaleLineEntity> _items = [];
-  final List<_Payment> _payments = [];
+  // ✅ MODIFICATION: La liste utilise maintenant le PaymentViewModel
+  final List<PaymentViewModel> _payments = [];
 
   double _globalDiscount = 0.0;
   double _shippingFees = 0.0;
 
-  // ✅ --- NOUVEAU GETTER POUR VÉRIFIER SI LE FORMULAIRE A ÉTÉ MODIFIÉ ---
   bool get _isFormDirty {
     return _selectedClient != null ||
         _selectedWarehouse != null ||
         _items.isNotEmpty ||
         _payments.isNotEmpty;
   }
-  // --- FIN ---
 
   @override
   void dispose() {
@@ -79,7 +80,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         if (item.isSerialized && item.scannedCodes.length != item.quantity) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Veuillez scanner tous les codes pour "${item.name}".'),
+              content:
+                  Text('Veuillez scanner tous les codes pour "${item.name}".'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -87,7 +89,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         }
       }
     }
-
+    // ✅ La validation de paiement n'est plus bloquante (vente à crédit)
     if (_step < 3) {
       setState(() => _step++);
       _pageController.nextPage(
@@ -104,7 +106,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
           curve: Curves.easeOutCubic);
     }
   }
-  
+
   Future<void> _handleClientSelection(List<ClientEntity> clients) async {
     final result = await pickClient(context: context, clients: clients);
     if (result != null) {
@@ -139,21 +141,23 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   Future<void> _addItem() async {
     final selectedArticle = await showArticlePicker(context: context);
     if (selectedArticle == null) return;
-    
-    final existingItemIndex = _items.indexWhere((item) => item.productId == selectedArticle.id);
+
+    final existingItemIndex =
+        _items.indexWhere((item) => item.productId == selectedArticle.id);
     if (existingItemIndex != -1) {
       await _editItem(existingItemIndex, _items[existingItemIndex]);
       return;
     }
-    
-    final saleLine = await showSaleLineDialog(context: context, article: selectedArticle);
+
+    final saleLine =
+        await showSaleLineDialog(context: context, article: selectedArticle);
     if (saleLine != null) {
       setState(() {
         _items.add(saleLine);
       });
     }
   }
-  
+
   Future<void> _scanAndAddItem() async {
     final organizationId = ref.read(organizationIdProvider).value;
     if (organizationId == null) return;
@@ -162,23 +166,30 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       MaterialPageRoute(builder: (_) => const SimpleBarcodeScannerScreen()),
     );
     if (scannedCode == null || scannedCode.isEmpty) return;
-    
+
     final getArticleBySku = ref.read(getArticleBySkuProvider);
-    final articleMatch = await getArticleBySku(organizationId: organizationId, sku: scannedCode);
+    final articleMatch =
+        await getArticleBySku(organizationId: organizationId, sku: scannedCode);
 
     if (articleMatch == null) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Article non trouvé')));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Article non trouvé')));
+      }
       return;
     }
 
     if (articleMatch.hasSerializedUnits) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Cet article doit être ajouté manuellement pour définir la quantité et scanner les codes.")),
+        const SnackBar(
+            content: Text(
+                "Cet article doit être ajouté manuellement pour définir la quantité et scanner les codes.")),
       );
       return;
     }
 
-    final existingItemIndex = _items.indexWhere((item) => item.productId == articleMatch.id);
+    final existingItemIndex =
+        _items.indexWhere((item) => item.productId == articleMatch.id);
     setState(() {
       if (existingItemIndex != -1) {
         final existingLine = _items[existingItemIndex];
@@ -193,7 +204,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
             scannedCodes: existingLine.scannedCodes,
           );
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Stock maximum atteint pour ${articleMatch.name}')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Stock maximum atteint pour ${articleMatch.name}')));
         }
       } else {
         if (articleMatch.totalQuantity > 0) {
@@ -206,7 +218,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
             isSerialized: articleMatch.hasSerializedUnits,
           ));
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Article ${articleMatch.name} en rupture de stock')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Article ${articleMatch.name} en rupture de stock')));
         }
       }
     });
@@ -215,9 +228,10 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   Future<void> _editItem(int index, SaleLineEntity line) async {
     final organizationId = ref.read(organizationIdProvider).value;
     if (organizationId == null) return;
-    
+
     final getArticleBySku = ref.read(getArticleBySkuProvider);
-    final originalArticle = await getArticleBySku(organizationId: organizationId, sku: line.productId);
+    final originalArticle =
+        await getArticleBySku(organizationId: organizationId, sku: line.productId);
 
     if (originalArticle == null || !mounted) return;
 
@@ -263,6 +277,31 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     }
   }
 
+  // ✅ --- NOUVELLE LOGIQUE POUR AJOUTER UN PAIEMENT ---
+  Future<void> _addPayment(double amountDue) async {
+    final paymentMethods = ref.read(paymentMethodsProvider).value ?? [];
+    if (paymentMethods.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Aucun moyen de paiement configuré.'),
+        backgroundColor: Colors.orange,
+      ));
+      return;
+    }
+
+    final result = await showAddPaymentDialog(
+      context: context,
+      amountDue: amountDue,
+      paymentMethods: paymentMethods,
+    );
+
+    if (result != null) {
+      setState(() {
+        _payments.add(result);
+      });
+    }
+  }
+  // --- FIN ---
+
   @override
   Widget build(BuildContext context) {
     final controller = ref.watch(createSaleControllerProvider);
@@ -272,7 +311,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     final clientsAsync = ref.watch(clientsStreamProvider);
     final warehousesAsync = ref.watch(warehousesProvider);
 
-    // ✅ --- LE SCAFFOLD EST ENCAPSULÉ DANS UN PopScope ---
     return PopScope(
       canPop: !_isFormDirty,
       onPopInvoked: (didPop) async {
@@ -311,7 +349,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                 children: [
                   _buildStep1(clients, warehouses),
                   _buildStep2(),
-                  _buildStep3(),
+                  // ✅ L'étape 3 appelle la nouvelle méthode de build
+                  _buildStep3(ref.watch(paymentMethodsProvider).value ?? []),
                   _buildStep4(controller, organizationId),
                 ],
               ),
@@ -326,7 +365,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 
-  // ... (Le reste du fichier reste identique)
   Widget _buildStep1(List<ClientEntity> clients, List<Warehouse> warehouses) {
     return Column(
       children: [
@@ -434,8 +472,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                         ),
                         alignment: Alignment.centerRight,
                         padding: const EdgeInsets.only(right: 20.0),
-                        child:
-                            const Icon(Icons.delete_outline, color: Colors.white),
+                        child: const Icon(Icons.delete_outline,
+                            color: Colors.white),
                       ),
                       child: tile,
                     );
@@ -473,79 +511,91 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 
-  Widget _buildStep3() {
+  // ✅ --- MÉTHODE _buildStep3 COMPLÈTEMENT REFAITE ---
+  Widget _buildStep3(List<PaymentMethod> paymentMethods) {
+    final theme = Theme.of(context);
     final total = _items.fold<double>(0, (sum, e) => sum + e.lineTotal);
-    final paid = _payments.fold<double>(0, (sum, p) => sum + p.amount);
-    final remaining = total - paid;
+    final paid =
+        _payments.fold<double>(0, (sum, p) => sum + p.amountPaid);
+    final due = total - paid;
+    final change = _payments.fold<double>(0, (sum, p) => sum + p.change);
 
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Card(
-            elevation: 1,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Total à payer',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text('${total.toStringAsFixed(0)} F',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Paiements',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              TextButton.icon(
-                onPressed: _addPayment,
-                icon: const Icon(Icons.add),
-                label: const Text('Ajouter un paiement'),
-              ),
-            ],
-          ),
-          Expanded(
-            child: _payments.isEmpty
-                ? const Center(child: Text('Aucun paiement'))
-                : ListView.builder(
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _PaymentSummaryCard(
+                  total: total,
+                  paid: paid,
+                  due: due,
+                  change: change,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Paiements Encaissés',
+                        style: theme.textTheme.titleLarge),
+                    if (due > 0.01)
+                      FilledButton.tonalIcon(
+                        onPressed: () => _addPayment(due),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Ajouter'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_payments.isEmpty)
+                  const Center(
+                      child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32.0),
+                    child: Text('Aucun paiement pour le moment.'),
+                  ))
+                else
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
                     itemCount: _payments.length,
                     itemBuilder: (context, index) {
-                      final p = _payments[index];
-                      return ListTile(
-                        title: Text('${p.amount.toStringAsFixed(0)} F'),
-                        subtitle: Text(p.method),
+                      final payment = _payments[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: const Icon(Icons.check_circle_outline,
+                              color: Colors.green),
+                          title: Text(_money(payment.amountPaid)),
+                          subtitle: Text('Via: ${payment.method.name}'),
+                          trailing: IconButton(
+                            icon: Icon(Icons.delete_outline,
+                                color: theme.colorScheme.error),
+                            onPressed: () {
+                              setState(() => _payments.removeAt(index));
+                            },
+                          ),
+                        ),
                       );
                     },
                   ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              children: [
-                _summaryRow('Total payé', paid),
-                _summaryRow('Solde restant', remaining, bold: true),
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Row(
-              children: [
-                OutlinedButton(onPressed: _back, child: const Text('Retour')),
-                const Spacer(),
-                FilledButton(onPressed: _next, child: const Text('Suivant')),
-              ],
-            ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              OutlinedButton(onPressed: _back, child: const Text('Retour')),
+              const Spacer(),
+              FilledButton(onPressed: _next, child: const Text('Suivant')),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -560,7 +610,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
             _globalDiscount;
     final taxTotal = _items.fold<double>(0, (sum, e) => sum + e.lineTax);
     final grandTotal = subTotal - _globalDiscount + taxTotal + _shippingFees;
-    final paid = _payments.fold<double>(0, (sum, p) => sum + p.amount);
+    final paid =
+        _payments.fold<double>(0, (sum, p) => sum + p.amountPaid);
     final due = grandTotal - paid;
 
     return SingleChildScrollView(
@@ -617,6 +668,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                       items: _items,
                       globalDiscount: _globalDiscount,
                       shippingFees: _shippingFees,
+                      // TODO: Convertir PaymentViewModel en PaymentEntity
+                      payments: const [], 
                     );
                     await controller.saveSale(
                       organizationId: organizationId,
@@ -650,25 +703,105 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: style),
-          Text('${value.toStringAsFixed(0)} F', style: style),
+          Text(_money(value), style: style),
         ],
       ),
     );
   }
+}
 
-  void _addPayment() {
-    setState(() {
-      _payments.add(_Payment(amount: 1000, method: 'Caisse')); // demo
-    });
+// ✅ --- NOUVEAUX WIDGETS POUR L'UI DE PAIEMENT ---
+
+class _PaymentSummaryCard extends StatelessWidget {
+  final double total;
+  final double paid;
+  final double due;
+  final double change;
+
+  const _PaymentSummaryCard({
+    required this.total,
+    required this.paid,
+    required this.due,
+    required this.change,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerLowest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: theme.colorScheme.outlineVariant.withAlpha(100)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            _SummaryRow(label: 'Total de la vente', value: _money(total)),
+            const SizedBox(height: 8),
+            _SummaryRow(label: 'Montant Reçu', value: _money(paid)),
+            if (change > 0) ...[
+              const SizedBox(height: 8),
+              _SummaryRow(
+                label: 'Monnaie à rendre',
+                value: _money(change),
+                valueColor: Colors.green.shade700,
+              ),
+            ],
+            const Divider(height: 24),
+            _SummaryRow(
+              label: due > 0 ? 'Solde Restant' : 'Crédit',
+              value: _money(due.abs()),
+              isBold: true,
+              valueColor: due > 0.01 ? theme.colorScheme.error : Colors.green,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-class _Payment {
-  final double amount;
-  final String method;
+class _SummaryRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool isBold;
+  final Color? valueColor;
 
-  _Payment({required this.amount, required this.method});
+  const _SummaryRow({
+    required this.label,
+    required this.value,
+    this.isBold = false,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final labelStyle = isBold
+        ? theme.textTheme.titleMedium
+        : theme.textTheme.bodyLarge;
+    final valueStyle = theme.textTheme.titleMedium?.copyWith(
+      fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+      color: valueColor,
+    );
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: labelStyle),
+        Text(value, style: valueStyle)
+      ],
+    );
+  }
 }
+// --- FIN DES NOUVEAUX WIDGETS ---
+
+String _money(double v) =>
+    NumberFormat.currency(locale: 'fr_FR', symbol: 'F', decimalDigits: 0)
+        .format(v);
 
 class _StandardSaleLineTile extends StatelessWidget {
   final SaleLineEntity item;
@@ -687,9 +820,9 @@ class _StandardSaleLineTile extends StatelessWidget {
       child: ListTile(
         title: Text(item.name ?? 'Article'),
         subtitle: Text(
-            '${item.quantity.toStringAsFixed(0)} x ${NumberFormat.decimalPattern('fr_FR').format(item.unitPrice)} F'),
+            '${item.quantity.toStringAsFixed(0)} x ${_money(item.unitPrice)}'),
         trailing: Text(
-          '${NumberFormat.decimalPattern('fr_FR').format(item.lineTotal)} F',
+          _money(item.lineTotal),
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         onTap: onEdit,
@@ -702,7 +835,8 @@ class _SerializedSaleLineTile extends StatelessWidget {
   final SaleLineEntity item;
   final VoidCallback onScan;
   final VoidCallback onEdit;
-  const _SerializedSaleLineTile({required this.item, required this.onScan, required this.onEdit});
+  const _SerializedSaleLineTile(
+      {required this.item, required this.onScan, required this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -710,7 +844,9 @@ class _SerializedSaleLineTile extends StatelessWidget {
     final scannedCount = item.scannedCodes.length;
     final targetCount = item.quantity.toInt();
     final isComplete = scannedCount == targetCount;
-    final color = isComplete ? Colors.green : (scannedCount > 0 ? Colors.orange : theme.colorScheme.primary);
+    final color = isComplete
+        ? Colors.green
+        : (scannedCount > 0 ? Colors.orange : theme.colorScheme.primary);
 
     return Card(
       elevation: 0,
@@ -725,11 +861,11 @@ class _SerializedSaleLineTile extends StatelessWidget {
           children: [
             ListTile(
               dense: true,
-              title: Text(item.name ?? 'Article', style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(
-                  '$targetCount x ${NumberFormat.decimalPattern('fr_FR').format(item.unitPrice)} F'),
+              title: Text(item.name ?? 'Article',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text('$targetCount x ${_money(item.unitPrice)}'),
               trailing: Text(
-                '${NumberFormat.decimalPattern('fr_FR').format(item.lineTotal)} F',
+                _money(item.lineTotal),
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               onTap: onEdit,
@@ -738,8 +874,13 @@ class _SerializedSaleLineTile extends StatelessWidget {
             ListTile(
               dense: true,
               leading: Icon(Icons.qr_code_2_rounded, color: color),
-              title: Text('Codes scannés: $scannedCount / $targetCount', style: TextStyle(color: color)),
-              trailing: Icon(isComplete ? Icons.check_circle_outline : Icons.arrow_forward_ios_rounded, color: color),
+              title: Text('Codes scannés: $scannedCount / $targetCount',
+                  style: TextStyle(color: color)),
+              trailing: Icon(
+                  isComplete
+                      ? Icons.check_circle_outline
+                      : Icons.arrow_forward_ios_rounded,
+                  color: color),
               onTap: onScan,
             ),
           ],

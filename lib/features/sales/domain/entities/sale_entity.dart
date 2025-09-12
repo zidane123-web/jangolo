@@ -15,6 +15,13 @@ class SaleEntity {
   final double globalDiscount;
   final double shippingFees;
   final double otherFees;
+  
+  final String? createdBy;
+  final String? paymentStatus;
+  
+  // ✅ CHAMP AJOUTÉ POUR LA GESTION DES LIVRAISONS
+  final bool? hasDelivery;
+
 
   const SaleEntity({
     required this.id,
@@ -26,6 +33,9 @@ class SaleEntity {
     this.globalDiscount = 0.0,
     this.shippingFees = 0.0,
     this.otherFees = 0.0,
+    this.createdBy,
+    this.paymentStatus,
+    this.hasDelivery, // ✅ Ajouté au constructeur
   });
 
   double get subTotal => items.fold(0.0, (sum, item) => sum + item.lineSubtotal);

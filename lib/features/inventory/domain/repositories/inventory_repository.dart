@@ -19,4 +19,10 @@ abstract class InventoryRepository {
 
   Stream<List<MovementEntity>> getMovements(
       String organizationId, String articleId);
+
+  /// Searches for articles whose name matches the provided query.
+  Stream<List<ArticleEntity>> searchArticles({
+    required String organizationId,
+    required String query,
+  });
 }

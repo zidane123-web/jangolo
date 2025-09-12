@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/providers/auth_providers.dart';
-import '../../../inventory/domain/entities/article_entity.dart';
 import '../../../inventory/presentation/providers/inventory_providers.dart';
 import '../../../settings/domain/entities/management_entities.dart';
 import '../../../settings/presentation/providers/settings_providers.dart';
@@ -113,20 +112,20 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     }
   }
 
-  Future<void> _addItem(List<ArticleEntity> articles) async {
-    final selectedArticle = await showArticlePicker(
-      context: context,
-      articles: articles,
-    );
+  // --- LOGIQUE D'AJOUT D'ARTICLE OPTIMISÉE ---
+  Future<void> _addItem() async {
+    final selectedArticle = await showArticlePicker(context: context);
+
     if (selectedArticle == null) return;
-    
-    // Si l'article est déjà dans la liste, on propose de le modifier
-    final existingItemIndex = _items.indexWhere((item) => item.productId == selectedArticle.id);
+
+    final articles = ref.read(articlesStreamProvider).value ?? [];
+    final existingItemIndex =
+        _items.indexWhere((item) => item.productId == selectedArticle.id);
     if (existingItemIndex != -1) {
-      await _editItem(existingItemIndex, _items[existingItemIndex], articles);
+      await _editItem(existingItemIndex, _items[existingItemIndex]);
       return;
     }
-    
+
     final saleLine = await showSaleLineDialog(
       context: context,
       article: selectedArticle,
@@ -138,17 +137,23 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       });
     }
   }
-  
-  // --- NOUVELLE FONCTION POUR LE SCAN ---
-  Future<void> _scanAndAddItem(List<ArticleEntity> articles) async {
+
+  // --- LOGIQUE DE SCAN OPTIMISÉE ---
+  Future<void> _scanAndAddItem() async {
+    final organizationId = ref.read(organizationIdProvider).value;
+    if (organizationId == null) return;
+
     final scannedCode = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => const SimpleBarcodeScannerScreen()),
     );
 
     if (scannedCode == null || scannedCode.isEmpty) return;
 
-    // Chercher l'article correspondant au code scanné (ID de l'article = SKU)
-    final articleMatch = articles.where((a) => a.id == scannedCode).firstOrNull;
+    final getArticleBySku = ref.read(getArticleBySkuProvider);
+    final articleMatch = await getArticleBySku(
+      organizationId: organizationId,
+      sku: scannedCode,
+    );
 
     if (articleMatch == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -159,15 +164,12 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       return;
     }
 
-    // Vérifier si l'article est déjà dans la vente
     final existingItemIndex =
         _items.indexWhere((item) => item.productId == articleMatch.id);
 
     setState(() {
       if (existingItemIndex != -1) {
-        // L'article existe, on incrémente la quantité
         final existingLine = _items[existingItemIndex];
-        // On s'assure de ne pas dépasser le stock
         if (existingLine.quantity < articleMatch.totalQuantity) {
           _items[existingItemIndex] = SaleLineEntity(
             id: existingLine.id,
@@ -183,7 +185,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
           );
         }
       } else {
-        // L'article n'existe pas, on l'ajoute avec une quantité de 1
         if (articleMatch.totalQuantity > 0) {
           _items.add(
             SaleLineEntity(
@@ -204,26 +205,17 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       }
     });
   }
-  // --- FIN DE LA NOUVELLE FONCTION ---
 
-  Future<void> _editItem(
-    int index,
-    SaleLineEntity line,
-    List<ArticleEntity> articles,
-  ) async {
-    final originalArticle = articles.firstWhere(
-      (a) => a.id == line.productId,
-      orElse: () => ArticleEntity(
-        id: line.productId,
-        name: line.name ?? 'Inconnu',
-        category: ArticleCategory.accessories,
-        buyPrice: 0,
-        sellPrice: line.unitPrice,
-        hasSerializedUnits: false,
-        totalQuantity: line.quantity.toInt(),
-        createdAt: DateTime.now(),
-      ),
-    );
+  // La méthode _editItem est modifiée pour ne plus dépendre de la liste complète
+  Future<void> _editItem(int index, SaleLineEntity line) async {
+    final organizationId = ref.read(organizationIdProvider).value;
+    if (organizationId == null) return;
+
+    final getArticleBySku = ref.read(getArticleBySkuProvider);
+    final originalArticle = await getArticleBySku(
+        organizationId: organizationId, sku: line.productId);
+
+    if (originalArticle == null || !mounted) return;
 
     final updatedLine = await showSaleLineDialog(
       context: context,
@@ -246,7 +238,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
 
     final clientsAsync = ref.watch(clientsStreamProvider);
     final warehousesAsync = ref.watch(warehousesProvider);
-    final articlesAsync = ref.watch(articlesStreamProvider);
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -263,20 +254,16 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       body: SafeArea(
         child: clientsAsync.when(
           data: (clients) => warehousesAsync.when(
-            data: (warehouses) => articlesAsync.when(
-              data: (articles) => PageView(
-                controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(),
-                onPageChanged: (p) => setState(() => _step = p),
-                children: [
-                  _buildStep1(clients, warehouses),
-                  _buildStep2(articles),
-                  _buildStep3(),
-                  _buildStep4(controller, organizationId),
-                ],
-              ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, s) => Center(child: Text("Erreur articles: $e")),
+            data: (warehouses) => PageView(
+              controller: _pageController,
+              physics: const NeverScrollableScrollPhysics(),
+              onPageChanged: (p) => setState(() => _step = p),
+              children: [
+                _buildStep1(clients, warehouses),
+                _buildStep2(),
+                _buildStep3(),
+                _buildStep4(controller, organizationId),
+              ],
             ),
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, s) => Center(child: Text("Erreur entrepôts: $e")),
@@ -325,7 +312,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 
-  Widget _buildStep2(List<ArticleEntity> articles) {
+  Widget _buildStep2() {
     final subtotal = _items.fold<double>(0, (sum, item) => sum + item.lineTotal);
 
     return Column(
@@ -343,13 +330,13 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
               Row(
                 children: [
                   FilledButton.tonalIcon(
-                    onPressed: () => _scanAndAddItem(articles),
+                    onPressed: _scanAndAddItem,
                     icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
                     label: const Text('Scanner'),
                   ),
                   const SizedBox(width: 8),
                   FilledButton.tonalIcon(
-                    onPressed: () => _addItem(articles),
+                    onPressed: _addItem,
                     icon: const Icon(Icons.add),
                     label: const Text('Ajouter'),
                   ),
@@ -412,7 +399,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                             '${NumberFormat.decimalPattern('fr_FR').format(item.lineTotal)} F',
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          onTap: () => _editItem(index, item, articles),
+                          onTap: () => _editItem(index, item),
                         ),
                       ),
                     );

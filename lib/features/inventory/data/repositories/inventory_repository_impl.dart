@@ -12,9 +12,18 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
   @override
   Stream<List<ArticleEntity>> getArticles(String organizationId) {
-    return remoteDataSource.getArticles(organizationId).map((models) {
-      return models.map((m) => m as ArticleEntity).toList();
-    });
+    return remoteDataSource.getArticles(organizationId).map(
+        (models) => models.map((m) => m as ArticleEntity).toList());
+  }
+
+  @override
+  Stream<List<ArticleEntity>> searchArticles({
+    required String organizationId,
+    required String query,
+  }) {
+    return remoteDataSource
+        .searchArticles(organizationId: organizationId, query: query)
+        .map((models) => models.map((m) => m as ArticleEntity).toList());
   }
 
   @override

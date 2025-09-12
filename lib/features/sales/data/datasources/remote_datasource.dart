@@ -1,6 +1,7 @@
 // lib/features/sales/data/datasources/remote_datasource.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/client_model.dart';
 import '../models/sale_line_model.dart';
 import '../models/sale_model.dart';
 
@@ -10,12 +11,36 @@ abstract class SalesRemoteDataSource {
   Future<(SaleModel?, List<SaleLineModel>)> getSaleDetails(
       String organizationId, String saleId);
   Future<void> updateSale(String organizationId, SaleModel sale);
+
+  // --- NEW CLIENT METHODS ---
+  Stream<List<ClientModel>> getClients(String organizationId);
+  Future<ClientModel> addClient(String organizationId, ClientModel client);
 }
 
 class SalesRemoteDataSourceImpl implements SalesRemoteDataSource {
   final FirebaseFirestore firestore;
 
   SalesRemoteDataSourceImpl({required this.firestore});
+
+  // Helper générique pour un stream de collection
+  Stream<List<T>> _getCollectionStream<T>({
+    required String organizationId,
+    required String collectionName,
+    required T Function(DocumentSnapshot) fromSnapshot,
+  }) {
+    try {
+      final snapshots = firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection(collectionName)
+          .snapshots();
+      return snapshots.map((snapshot) {
+        return snapshot.docs.map(fromSnapshot).toList();
+      });
+    } catch (e) {
+      throw Exception('Impossible de charger la collection $collectionName.');
+    }
+  }
 
   @override
   Stream<List<SaleModel>> getAllSales(String organizationId) {
@@ -94,6 +119,33 @@ class SalesRemoteDataSourceImpl implements SalesRemoteDataSource {
       await saleRef.update(sale.toJson());
     } catch (e) {
       throw Exception('Impossible de mettre à jour la vente.');
+    }
+  }
+
+  // --- IMPLEMENTATION OF NEW CLIENT METHODS ---
+  @override
+  Stream<List<ClientModel>> getClients(String organizationId) {
+    return _getCollectionStream(
+      organizationId: organizationId,
+      collectionName: 'clients',
+      fromSnapshot: (doc) => ClientModel.fromSnapshot(doc),
+    );
+  }
+
+  @override
+  Future<ClientModel> addClient(
+      String organizationId, ClientModel client) async {
+    try {
+      final docRef = await firestore
+          .collection('organisations')
+          .doc(organizationId)
+          .collection('clients')
+          .add(client.toJson());
+
+      final doc = await docRef.get();
+      return ClientModel.fromSnapshot(doc);
+    } catch (e) {
+      throw Exception('Impossible d\'ajouter le client.');
     }
   }
 }

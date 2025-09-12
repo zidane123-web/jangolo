@@ -5,17 +5,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/providers/auth_providers.dart';
+import '../../../inventory/domain/entities/article_entity.dart';
+import '../../../inventory/presentation/providers/inventory_providers.dart';
+import '../../../settings/domain/entities/management_entities.dart';
+import '../../../settings/presentation/providers/settings_providers.dart';
+import '../../domain/entities/client_entity.dart';
 import '../../domain/entities/sale_entity.dart';
 import '../../domain/entities/sale_line_entity.dart';
 import '../controllers/create_sale_controller.dart';
 import '../providers/sales_providers.dart';
-// --- NOUVEAUX IMPORTS ---
-import '../../../settings/presentation/providers/settings_providers.dart'; // <-- NOUVEL IMPORT
-import '../../../settings/domain/entities/management_entities.dart';
-import '../../domain/entities/client_entity.dart';
 import '../widgets/client_picker.dart';
-import '../../../purchases/presentation/widgets/create_purchase/warehouse_supplier_picker.dart';
+import '../widgets/create_sale/article_picker.dart';
 import '../widgets/create_sale/sale_info_form.dart';
+import '../widgets/create_sale/sale_line_dialog.dart';
+import 'simple_barcode_scanner_screen.dart'; // <-- NOUVEL IMPORT
+import '../../../purchases/presentation/widgets/create_purchase/warehouse_supplier_picker.dart';
 
 class CreateSaleScreen extends ConsumerStatefulWidget {
   const CreateSaleScreen({super.key});
@@ -25,12 +29,10 @@ class CreateSaleScreen extends ConsumerStatefulWidget {
 }
 
 class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
-  // --- GESTION D'ÉTAT AMÉLIORÉE ---
   final _pageController = PageController();
   final _step1FormKey = GlobalKey<FormState>();
   int _step = 0;
 
-  // Modèles de données au lieu de simples chaînes de caractères
   ClientEntity? _selectedClient;
   Warehouse? _selectedWarehouse;
   DateTime _selectedDate = DateTime.now();
@@ -48,13 +50,11 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   }
 
   void _next() {
-    // Validation améliorée pour l'étape 1
     if (_step == 0) {
       if (!_step1FormKey.currentState!.validate()) {
-        return; // Le formulaire affiche les erreurs
+        return;
       }
     }
-    // Validation pour l'étape 2 (articles)
     if (_step == 1 && _items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -82,7 +82,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     }
   }
 
-  // --- NOUVELLES FONCTIONS DE SÉLECTION ---
   Future<void> _handleClientSelection(List<ClientEntity> clients) async {
     final result = await pickClient(context: context, clients: clients);
     if (result != null) {
@@ -93,7 +92,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   }
 
   Future<void> _handleWarehouseSelection(List<Warehouse> warehouses) async {
-    final result = await pickWarehouse(context: context, warehouses: warehouses);
+    final result =
+        await pickWarehouse(context: context, warehouses: warehouses);
     if (result != null) {
       setState(() {
         _selectedWarehouse = result;
@@ -112,7 +112,131 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       setState(() => _selectedDate = date);
     }
   }
-  // --- FIN DES NOUVELLES FONCTIONS ---
+
+  Future<void> _addItem(List<ArticleEntity> articles) async {
+    final selectedArticle = await showArticlePicker(
+      context: context,
+      articles: articles,
+    );
+    if (selectedArticle == null) return;
+    
+    // Si l'article est déjà dans la liste, on propose de le modifier
+    final existingItemIndex = _items.indexWhere((item) => item.productId == selectedArticle.id);
+    if (existingItemIndex != -1) {
+      await _editItem(existingItemIndex, _items[existingItemIndex], articles);
+      return;
+    }
+    
+    final saleLine = await showSaleLineDialog(
+      context: context,
+      article: selectedArticle,
+    );
+
+    if (saleLine != null) {
+      setState(() {
+        _items.add(saleLine);
+      });
+    }
+  }
+  
+  // --- NOUVELLE FONCTION POUR LE SCAN ---
+  Future<void> _scanAndAddItem(List<ArticleEntity> articles) async {
+    final scannedCode = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const SimpleBarcodeScannerScreen()),
+    );
+
+    if (scannedCode == null || scannedCode.isEmpty) return;
+
+    // Chercher l'article correspondant au code scanné (ID de l'article = SKU)
+    final articleMatch = articles.where((a) => a.id == scannedCode).firstOrNull;
+
+    if (articleMatch == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Article non trouvé'),
+            backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    // Vérifier si l'article est déjà dans la vente
+    final existingItemIndex =
+        _items.indexWhere((item) => item.productId == articleMatch.id);
+
+    setState(() {
+      if (existingItemIndex != -1) {
+        // L'article existe, on incrémente la quantité
+        final existingLine = _items[existingItemIndex];
+        // On s'assure de ne pas dépasser le stock
+        if (existingLine.quantity < articleMatch.totalQuantity) {
+          _items[existingItemIndex] = SaleLineEntity(
+            id: existingLine.id,
+            productId: existingLine.productId,
+            name: existingLine.name,
+            unitPrice: existingLine.unitPrice,
+            quantity: existingLine.quantity + 1,
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Stock maximum atteint pour ${articleMatch.name}')),
+          );
+        }
+      } else {
+        // L'article n'existe pas, on l'ajoute avec une quantité de 1
+        if (articleMatch.totalQuantity > 0) {
+          _items.add(
+            SaleLineEntity(
+              id:
+                  '${articleMatch.id}-${DateTime.now().millisecondsSinceEpoch}',
+              productId: articleMatch.id,
+              name: articleMatch.name,
+              quantity: 1,
+              unitPrice: articleMatch.sellPrice,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Article ${articleMatch.name} en rupture de stock')),
+          );
+        }
+      }
+    });
+  }
+  // --- FIN DE LA NOUVELLE FONCTION ---
+
+  Future<void> _editItem(
+    int index,
+    SaleLineEntity line,
+    List<ArticleEntity> articles,
+  ) async {
+    final originalArticle = articles.firstWhere(
+      (a) => a.id == line.productId,
+      orElse: () => ArticleEntity(
+        id: line.productId,
+        name: line.name ?? 'Inconnu',
+        category: ArticleCategory.accessories,
+        buyPrice: 0,
+        sellPrice: line.unitPrice,
+        hasSerializedUnits: false,
+        totalQuantity: line.quantity.toInt(),
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    final updatedLine = await showSaleLineDialog(
+      context: context,
+      article: originalArticle,
+      existingLine: line,
+    );
+
+    if (updatedLine != null) {
+      setState(() {
+        _items[index] = updatedLine;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,10 +244,9 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     final organizationId = ref.watch(organizationIdProvider).value;
     const backgroundColor = Colors.white;
 
-    // --- ON RÉCUPÈRE LES DONNÉES RÉELLES ---
     final clientsAsync = ref.watch(clientsStreamProvider);
     final warehousesAsync = ref.watch(warehousesProvider);
-    // --- FIN ---
+    final articlesAsync = ref.watch(articlesStreamProvider);
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -138,19 +261,22 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         ),
       ),
       body: SafeArea(
-        // --- ON GÈRE LES ÉTATS DE CHARGEMENT ET D'ERREUR ---
         child: clientsAsync.when(
           data: (clients) => warehousesAsync.when(
-            data: (warehouses) => PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              onPageChanged: (p) => setState(() => _step = p),
-              children: [
-                _buildStep1(clients, warehouses),
-                _buildStep2(),
-                _buildStep3(),
-                _buildStep4(controller, organizationId),
-              ],
+            data: (warehouses) => articlesAsync.when(
+              data: (articles) => PageView(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                onPageChanged: (p) => setState(() => _step = p),
+                children: [
+                  _buildStep1(clients, warehouses),
+                  _buildStep2(articles),
+                  _buildStep3(),
+                  _buildStep4(controller, organizationId),
+                ],
+              ),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, s) => Center(child: Text("Erreur articles: $e")),
             ),
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, s) => Center(child: Text("Erreur entrepôts: $e")),
@@ -158,18 +284,18 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, s) => Center(child: Text("Erreur clients: $e")),
         ),
-        // --- FIN ---
       ),
     );
   }
 
-  // --- ÉTAPE 1 : ENTIÈREMENT RECONSTRUITE AVEC LE FORMULAIRE ---
   Widget _buildStep1(List<ClientEntity> clients, List<Warehouse> warehouses) {
+    // ... (inchangé)
     return Column(
       children: [
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
             child: Form(
               key: _step1FormKey,
               child: SaleInfoForm(
@@ -189,7 +315,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
             width: double.infinity,
             child: FilledButton(
               onPressed: _next,
-              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+              style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16)),
               child: const Text('Suivant'),
             ),
           ),
@@ -198,72 +325,133 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 
-  // Les autres étapes (_buildStep2, _buildStep3, _buildStep4) restent
-  // globalement les mêmes, mais la sauvegarde dans _buildStep4 doit être mise à jour
-  // pour utiliser les nouveaux objets.
+  Widget _buildStep2(List<ArticleEntity> articles) {
+    final subtotal = _items.fold<double>(0, (sum, item) => sum + item.lineTotal);
 
-  Widget _buildStep2() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Row(
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Articles',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              TextButton.icon(
-                onPressed: _addItem,
-                icon: const Icon(Icons.add),
-                label: const Text('Ajouter un article'),
+              // --- AJOUT DES DEUX BOUTONS ---
+              Row(
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed: () => _scanAndAddItem(articles),
+                    icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                    label: const Text('Scanner'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.tonalIcon(
+                    onPressed: () => _addItem(articles),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Ajouter'),
+                  ),
+                ],
+              )
+              // --- FIN DE L'AJOUT ---
+            ],
+          ),
+        ),
+        Expanded(
+          child: _items.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.shopping_basket_outlined,
+                          size: 48, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text(
+                        "Scannez ou ajoutez un article pour commencer.",
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _items.length,
+                  itemBuilder: (context, index) {
+                    final item = _items[index];
+                    return Dismissible(
+                      key: ValueKey(item.id),
+                      direction: DismissDirection.endToStart,
+                      onDismissed: (_) {
+                        setState(() => _items.removeAt(index));
+                      },
+                      background: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20.0),
+                        child:
+                            const Icon(Icons.delete_outline, color: Colors.white),
+                      ),
+                      child: Card(
+                        elevation: 0,
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.shade200),
+                        ),
+                        child: ListTile(
+                          title: Text(item.name ?? 'Article'),
+                          subtitle: Text(
+                              '${item.quantity.toStringAsFixed(0)} x ${NumberFormat.decimalPattern('fr_FR').format(item.unitPrice)} F'),
+                          trailing: Text(
+                            '${NumberFormat.decimalPattern('fr_FR').format(item.lineTotal)} F',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          onTap: () => _editItem(index, item, articles),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Sous-total',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    '${NumberFormat.decimalPattern('fr_FR').format(subtotal)} F',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  OutlinedButton(onPressed: _back, child: const Text('Retour')),
+                  const Spacer(),
+                  FilledButton(onPressed: _next, child: const Text('Suivant')),
+                ],
               ),
             ],
           ),
-          Expanded(
-            child: _items.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(Icons.shopping_basket_outlined, size: 48, color: Colors.grey),
-                        SizedBox(height: 8),
-                        Text(
-                          "Aucun article. Cliquez sur 'Ajouter' pour commencer.",
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: _items.length,
-                    itemBuilder: (context, index) {
-                      final item = _items[index];
-                      return ListTile(
-                        title: Text(item.name ?? 'Article'),
-                        subtitle: Text('${item.quantity} x ${item.unitPrice.toStringAsFixed(0)} F'),
-                        trailing: Text('${item.lineTotal.toStringAsFixed(0)} F'),
-                      );
-                    },
-                  ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Row(
-              children: [
-                OutlinedButton(onPressed: _back, child: const Text('Retour')),
-                const Spacer(),
-                FilledButton(onPressed: _next, child: const Text('Suivant')),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildStep3() {
+    // ... (inchangé)
     final total = _items.fold<double>(0, (sum, e) => sum + e.lineTotal);
     final paid = _payments.fold<double>(0, (sum, p) => sum + p.amount);
     final remaining = total - paid;
@@ -279,8 +467,10 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Total à payer', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text('${total.toStringAsFixed(0)} F', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const Text('Total à payer',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text('${total.toStringAsFixed(0)} F',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -341,9 +531,12 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     CreateSaleController controller,
     String? organizationId,
   ) {
-    final subTotal = _items.fold<double>(0, (sum, e) => sum + e.lineSubtotal);
+    // ... (inchangé)
+    final subTotal =
+        _items.fold<double>(0, (sum, e) => sum + e.lineSubtotal);
     final discountTotal =
-        _items.fold<double>(0, (sum, e) => sum + e.lineDiscount) + _globalDiscount;
+        _items.fold<double>(0, (sum, e) => sum + e.lineDiscount) +
+            _globalDiscount;
     final taxTotal = _items.fold<double>(0, (sum, e) => sum + e.lineTax);
     final grandTotal = subTotal - _globalDiscount + taxTotal + _shippingFees;
     final paid = _payments.fold<double>(0, (sum, p) => sum + p.amount);
@@ -354,7 +547,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text("Résumé", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text("Résumé",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Card(
             child: Padding(
@@ -439,21 +633,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         ],
       ),
     );
-  }
-
-  void _addItem() {
-    setState(() {
-      final index = _items.length + 1;
-      _items.add(
-        SaleLineEntity(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          productId: 'p$index',
-          name: 'Produit $index',
-          quantity: 1,
-          unitPrice: 1000,
-        ),
-      );
-    });
   }
 
   void _addPayment() {

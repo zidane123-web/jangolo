@@ -1,20 +1,32 @@
+// lib/features/sales/presentation/widgets/create_sale/article_picker.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../../inventory/domain/entities/article_entity.dart';
-import '../../../inventory/presentation/providers/inventory_providers.dart';
+import '../../../../../core/providers/auth_providers.dart'; // ✅ IMPORT AJOUTÉ
+import '../../../../inventory/domain/entities/article_entity.dart';
+import '../../../../inventory/presentation/providers/inventory_providers.dart';
 
-// Provider for search query text
-final articleSearchQueryProvider = StateProvider<String>((ref) => '');
+// Provider pour le texte de la recherche
+final articleSearchQueryProvider = StateProvider.autoDispose<String>((ref) => '');
 
-// Provider for search results stream
-final articleSearchResultsProvider = StreamProvider<List<ArticleEntity>>((ref) {
+// Provider qui exécute la recherche et retourne le flux de résultats
+final articleSearchResultsProvider =
+    StreamProvider.autoDispose<List<ArticleEntity>>((ref) {
   final query = ref.watch(articleSearchQueryProvider);
-  if (query.isEmpty) {
+  final organizationId = ref.watch(organizationIdProvider).value;
+
+  // Si la recherche est vide ou si on n'a pas l'ID de l'orga, on ne retourne rien
+  if (query.isEmpty || organizationId == null) {
     return Stream.value([]);
   }
-  return ref.watch(searchArticlesProvider(query).stream);
+
+  // ✅ --- CORRECTION APPLIQUÉE ICI ---
+  // 1. On récupère le "use case" (la télécommande) pour la recherche
+  final searchUseCase = ref.watch(searchArticlesProvider(query));
+  // 2. On appelle le "use case" avec les bons paramètres pour obtenir le flux
+  return searchUseCase(organizationId: organizationId, query: query);
 });
 
 Future<ArticleEntity?> showArticlePicker({
@@ -96,7 +108,8 @@ class _ArticlePickerSheet extends ConsumerWidget {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         border: Border.all(
-                            color: theme.colorScheme.outlineVariant.withAlpha(153)),
+                            color: theme.colorScheme.outlineVariant
+                                .withAlpha(153)),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: ListTile(
@@ -104,10 +117,12 @@ class _ArticlePickerSheet extends ConsumerWidget {
                           radius: 20,
                           backgroundColor:
                               theme.colorScheme.primary.withOpacity(0.1),
-                          child: const Icon(Icons.inventory_2_outlined, size: 20),
+                          child:
+                              const Icon(Icons.inventory_2_outlined, size: 20),
                         ),
                         title: Text(article.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600)),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
                         subtitle: Text('Stock: ${article.totalQuantity}'),
                         trailing: Text(
                           _money(article.sellPrice),

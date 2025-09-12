@@ -69,6 +69,9 @@ class _SaleLineDialogContentState extends State<_SaleLineDialogContent> {
       name: widget.article.name,
       quantity: quantity,
       unitPrice: price,
+      // Serialized info
+      isSerialized: widget.article.hasSerializedUnits,
+      scannedCodes: widget.existingLine?.scannedCodes ?? [],
     );
 
     Navigator.of(context).pop(newLine);
@@ -86,7 +89,8 @@ class _SaleLineDialogContentState extends State<_SaleLineDialogContent> {
             TextFormField(
               controller: _quantityController,
               decoration: InputDecoration(
-                labelText: 'Quantité',
+                labelText:
+                    widget.article.hasSerializedUnits ? 'Quantité à vendre' : 'Quantité',
                 suffixText: 'en stock: ${widget.article.totalQuantity}',
               ),
               keyboardType: TextInputType.number,

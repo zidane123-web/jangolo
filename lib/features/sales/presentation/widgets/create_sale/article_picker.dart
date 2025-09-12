@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../../../../core/providers/auth_providers.dart'; // ✅ IMPORT AJOUTÉ
+import '../../../../../core/providers/auth_providers.dart';
 import '../../../../inventory/domain/entities/article_entity.dart';
 import '../../../../inventory/presentation/providers/inventory_providers.dart';
 
@@ -17,15 +17,11 @@ final articleSearchResultsProvider =
   final query = ref.watch(articleSearchQueryProvider);
   final organizationId = ref.watch(organizationIdProvider).value;
 
-  // Si la recherche est vide ou si on n'a pas l'ID de l'orga, on ne retourne rien
   if (query.isEmpty || organizationId == null) {
     return Stream.value([]);
   }
 
-  // ✅ --- CORRECTION APPLIQUÉE ICI ---
-  // 1. On récupère le "use case" (la télécommande) pour la recherche
   final searchUseCase = ref.watch(searchArticlesProvider(query));
-  // 2. On appelle le "use case" avec les bons paramètres pour obtenir le flux
   return searchUseCase(organizationId: organizationId, query: query);
 });
 
@@ -42,7 +38,13 @@ Future<ArticleEntity?> showArticlePicker({
     ),
     showDragHandle: true,
     builder: (context) {
-      return const _ArticlePickerSheet();
+      // ✅ --- CORRECTION APPLIQUÉE ICI ---
+      // On encapsule le widget dans un Container pour lui donner une hauteur fixe.
+      return Container(
+        height: MediaQuery.of(context).size.height * 1, // 80% de la hauteur de l'écran
+        child: const _ArticlePickerSheet(),
+      );
+      // --- FIN DE LA CORRECTION ---
     },
   );
 }
@@ -66,8 +68,9 @@ class _ArticlePickerSheet extends ConsumerWidget {
         top: 12,
         bottom: MediaQuery.of(context).viewInsets.bottom + 16,
       ),
+      // ✅ --- CORRECTION APPLIQUÉE ICI ---
+      // On retire `mainAxisSize: MainAxisSize.min` pour que la Column remplisse l'espace.
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
           Text('Sélectionner un article', style: theme.textTheme.titleLarge),
           const SizedBox(height: 16),
@@ -87,7 +90,9 @@ class _ArticlePickerSheet extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
-          Flexible(
+          // ✅ --- MODIFICATION ---
+          // On utilise Expanded pour que la zone de résultats prenne toute la place restante.
+          Expanded(
             child: searchResults.when(
               data: (articles) {
                 if (articles.isEmpty &&
@@ -99,7 +104,7 @@ class _ArticlePickerSheet extends ConsumerWidget {
                   return const Center(child: Text("Aucun article trouvé."));
                 }
                 return ListView.builder(
-                  shrinkWrap: true,
+                  // On retire shrinkWrap car la hauteur est maintenant gérée par Expanded
                   itemCount: articles.length,
                   itemBuilder: (context, index) {
                     final article = articles[index];

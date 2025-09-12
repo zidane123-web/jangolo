@@ -1,0 +1,55 @@
+// lib/features/sales/data/models/sale_line_model.dart
+
+import '../../domain/entities/sale_line_entity.dart';
+
+class SaleLineModel extends SaleLineEntity {
+  const SaleLineModel({
+    required super.id,
+    required super.productId,
+    super.name,
+    required super.quantity,
+    required super.unitPrice,
+    super.discountType,
+    super.discountValue,
+    super.vatRate,
+  });
+
+  factory SaleLineModel.fromEntity(SaleLineEntity entity) {
+    return SaleLineModel(
+      id: entity.id,
+      productId: entity.productId,
+      name: entity.name,
+      quantity: entity.quantity,
+      unitPrice: entity.unitPrice,
+      discountType: entity.discountType,
+      discountValue: entity.discountValue,
+      vatRate: entity.vatRate,
+    );
+  }
+
+  factory SaleLineModel.fromJson(Map<String, dynamic> json, String id) {
+    return SaleLineModel(
+      id: id,
+      productId: json['product_id'] as String? ?? '',
+      name: json['name'] as String?,
+      quantity: (json['quantity'] as num).toDouble(),
+      unitPrice: (json['unit_price'] as num).toDouble(),
+      discountType:
+          DiscountType.values.byName(json['discount_type'] as String? ?? 'none'),
+      discountValue: (json['discount_value'] as num?)?.toDouble() ?? 0.0,
+      vatRate: (json['vat_rate'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'product_id': productId,
+      'name': name,
+      'quantity': quantity,
+      'unit_price': unitPrice,
+      'discount_type': discountType.name,
+      'discount_value': discountValue,
+      'vat_rate': vatRate,
+    };
+  }
+}

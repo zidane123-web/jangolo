@@ -102,7 +102,7 @@ class SalesRemoteDataSourceImpl implements SalesRemoteDataSource {
 
     final saleDoc = await saleRef.get();
     if (!saleDoc.exists) {
-      return (null, [], []);
+      return (null, <SaleLineModel>[], <PaymentModel>[]);
     }
 
     final results = await Future.wait([

@@ -1,5 +1,6 @@
 // lib/features/sales/domain/repositories/sales_repository.dart
 
+import '../entities/payment_entity.dart';
 import '../entities/sale_entity.dart';
 
 abstract class SalesRepository {
@@ -22,5 +23,12 @@ abstract class SalesRepository {
   Future<SaleEntity?> getSaleDetails({
     required String organizationId,
     required String saleId,
+  });
+
+  /// Adds a payment to an existing sale.
+  Future<void> addPayment({
+    required String organizationId,
+    required String saleId,
+    required PaymentEntity payment,
   });
 }

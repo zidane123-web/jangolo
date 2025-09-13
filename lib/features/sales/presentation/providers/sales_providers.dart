@@ -15,6 +15,7 @@ import '../../domain/usecases/get_clients.dart';
 import '../../domain/usecases/get_all_sales.dart';
 import '../../domain/usecases/get_sale_details.dart';
 import '../controllers/create_sale_controller.dart';
+import '../controllers/sale_detail_controller.dart';
 
 /// Provider for the sales repository
 final salesRepositoryProvider = Provider<SalesRepositoryImpl>((ref) {
@@ -80,6 +81,11 @@ final saleDetailProvider =
 final createSaleControllerProvider = Provider<CreateSaleController>((ref) {
   final repository = ref.watch(salesRepositoryProvider);
   return CreateSaleController(repository, FirebaseFirestore.instance);
+});
+
+/// Controller used on the sale detail screen
+final saleDetailControllerProvider = Provider<SaleDetailController>((ref) {
+  return SaleDetailController(FirebaseFirestore.instance);
 });
 
 /// Search query for filtering sales by customer name

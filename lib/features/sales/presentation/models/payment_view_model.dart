@@ -2,18 +2,30 @@
 
 import '../../../settings/domain/entities/management_entities.dart';
 
-/// Un modèle simple pour gérer un paiement dans l'UI avant la sauvegarde.
+/// Un modèle pour gérer un paiement dans l'UI avant la sauvegarde.
 class PaymentViewModel {
-  final double amountPaid; // Ce que le client doit payer pour cette transaction
-  final PaymentMethod method;
-  final double? amountGiven; // Montant physiquement donné par le client
+  /// Montant réellement dû pour cette transaction (ex: 13 500 F).
+  final double amountPaid;
+
+  /// Montant physiquement donné par le client (ex: 15 000 F).
+  final double amountGiven;
+
+  /// Méthode de paiement qui reçoit l'argent (ex: Caisse).
+  final PaymentMethod methodIn;
+
+  /// Méthode de paiement qui rend la monnaie (peut être identique à methodIn).
+  final PaymentMethod methodOut;
 
   const PaymentViewModel({
     required this.amountPaid,
-    required this.method,
-    this.amountGiven,
+    required this.amountGiven,
+    required this.methodIn,
+    required this.methodOut,
   });
 
-  // Calcule la monnaie à rendre
-  double get change => (amountGiven ?? amountPaid) - amountPaid;
+  /// Calcule la monnaie à rendre.
+  double get change => amountGiven - amountPaid;
+
+  /// Indique si c'est un paiement simple sans rendu de monnaie complexe.
+  bool get isSimplePayment => change <= 0.01 || methodIn.id == methodOut.id;
 }

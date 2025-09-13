@@ -16,7 +16,9 @@ class SaleModel extends SaleEntity {
     super.shippingFees,
     super.otherFees,
     super.createdBy,
+    super.createdByName, // ✅ Ajouté
     super.hasDelivery,
+    required super.grandTotal, // ✅ Ajouté
   });
 
   factory SaleModel.fromEntity(SaleEntity entity) {
@@ -32,7 +34,9 @@ class SaleModel extends SaleEntity {
       shippingFees: entity.shippingFees,
       otherFees: entity.otherFees,
       createdBy: entity.createdBy,
+      createdByName: entity.createdByName, // ✅ Ajouté
       hasDelivery: entity.hasDelivery,
+      grandTotal: entity.grandTotal, // ✅ Ajouté
     );
   }
 
@@ -44,17 +48,15 @@ class SaleModel extends SaleEntity {
       customerName: data['customer_name'] as String?,
       status: SaleStatus.values.byName(data['status'] as String? ?? 'draft'),
       createdAt: (data['created_at'] as Timestamp).toDate(),
-      // Les listes (items, payments) sont chargées séparément via une sous-collection
       items: const [], 
       payments: const [],
       globalDiscount: (data['global_discount'] as num?)?.toDouble() ?? 0.0,
       shippingFees: (data['shipping_fees'] as num?)?.toDouble() ?? 0.0,
       otherFees: (data['other_fees'] as num?)?.toDouble() ?? 0.0,
       createdBy: data['created_by'] as String?,
+      createdByName: data['created_by_name'] as String?, // ✅ Lecture du nom
       hasDelivery: data['has_delivery'] as bool?,
-      // ✅ Ajout des totaux calculés pour un accès facile
-      // grandTotal: (data['grand_total'] as num?)?.toDouble() ?? 0.0,
-      // totalPaid: (data['total_paid'] as num?)?.toDouble() ?? 0.0,
+      grandTotal: (data['grand_total'] as num?)?.toDouble() ?? 0.0, // ✅ Lecture du total
     );
   }
 
@@ -68,9 +70,9 @@ class SaleModel extends SaleEntity {
       'shipping_fees': shippingFees,
       'other_fees': otherFees,
       'created_by': createdBy,
+      'created_by_name': createdByName, // ✅ Écriture du nom
       'has_delivery': hasDelivery,
-      // ✅ Ajout des totaux et du statut de paiement dénormalisés
-      'grand_total': grandTotal,
+      'grand_total': grandTotal, // ✅ Écriture du total
       'total_paid': totalPaid,
       'payment_status': paymentStatus.name,
     };

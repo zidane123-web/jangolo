@@ -45,14 +45,16 @@ class _AddPaymentDialogContent extends StatefulWidget {
 class _AddPaymentDialogContentState extends State<_AddPaymentDialogContent> {
   final _formKey = GlobalKey<FormState>();
   final _amountCtrl = TextEditingController();
-  PaymentMethod? _selectedMethod;
+  PaymentMethod? _selectedMethodIn;
+  PaymentMethod? _selectedMethodOut; // ✅ NOUVEAU: pour le rendu monnaie
   double _change = 0.0;
 
   @override
   void initState() {
     super.initState();
     if (widget.paymentMethods.isNotEmpty) {
-      _selectedMethod = widget.paymentMethods.first;
+      _selectedMethodIn = widget.paymentMethods.first;
+      _selectedMethodOut = widget.paymentMethods.first; // ✅ Initialisé par défaut
     }
     _amountCtrl.addListener(_calculateChange);
   }
@@ -75,7 +77,7 @@ class _AddPaymentDialogContentState extends State<_AddPaymentDialogContent> {
 
   void _onSave() {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedMethod == null) {
+    if (_selectedMethodIn == null || _selectedMethodOut == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Veuillez sélectionner un moyen de paiement.'),
         backgroundColor: Colors.orange,
@@ -88,8 +90,9 @@ class _AddPaymentDialogContentState extends State<_AddPaymentDialogContent> {
 
     final result = PaymentViewModel(
       amountPaid: amountToPay,
-      method: _selectedMethod!,
       amountGiven: amountGiven,
+      methodIn: _selectedMethodIn!,
+      methodOut: _change > 0 ? _selectedMethodOut! : _selectedMethodIn!,
     );
     Navigator.of(context).pop(result);
   }
@@ -161,7 +164,7 @@ class _AddPaymentDialogContentState extends State<_AddPaymentDialogContent> {
                   ),
                 ),
               const SizedBox(height: 20),
-              Text('Payé via *', style: theme.textTheme.titleSmall),
+              Text('Encaissé via *', style: theme.textTheme.titleSmall),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -169,13 +172,43 @@ class _AddPaymentDialogContentState extends State<_AddPaymentDialogContent> {
                 children: widget.paymentMethods
                     .map((method) => ChoiceChip(
                           label: Text(method.name),
-                          selected: _selectedMethod?.id == method.id,
+                          selected: _selectedMethodIn?.id == method.id,
                           onSelected: (selected) {
-                            if (selected) setState(() => _selectedMethod = method);
+                            if (selected) {
+                              setState(() {
+                                _selectedMethodIn = method;
+                                // Par défaut, la monnaie est rendue par le même moyen
+                                if (_selectedMethodOut?.id != method.id) {
+                                  _selectedMethodOut = method;
+                                }
+                              });
+                            }
                           },
                         ))
                     .toList(),
               ),
+
+              // ✅ --- NOUVELLE SECTION POUR LE RENDU MONNAIE ---
+              if (_change > 0) ...[
+                const SizedBox(height: 20),
+                Text('Monnaie rendue via *', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.paymentMethods
+                      .map((method) => ChoiceChip(
+                            label: Text(method.name),
+                            selected: _selectedMethodOut?.id == method.id,
+                            onSelected: (selected) {
+                              if (selected) setState(() => _selectedMethodOut = method);
+                            },
+                          ))
+                      .toList(),
+                ),
+              ],
+              // --- FIN DE LA NOUVELLE SECTION ---
+
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: _onSave,

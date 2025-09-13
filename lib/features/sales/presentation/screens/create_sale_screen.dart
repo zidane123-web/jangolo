@@ -1,14 +1,18 @@
 // lib/features/sales/presentation/screens/create_sale_screen.dart
 
+import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ NOUVEL IMPORT
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../core/providers/auth_providers.dart';
 import '../../../inventory/presentation/providers/inventory_providers.dart';
 import '../../../settings/domain/entities/management_entities.dart';
 import '../../../settings/presentation/providers/settings_providers.dart';
 import '../../domain/entities/client_entity.dart';
+import '../../domain/entities/payment_entity.dart';
 import '../../domain/entities/sale_entity.dart';
 import '../../domain/entities/sale_line_entity.dart';
 import '../controllers/create_sale_controller.dart';
@@ -41,11 +45,11 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   DateTime _selectedDate = DateTime.now();
 
   final List<SaleLineEntity> _items = [];
-  // ✅ MODIFICATION: La liste utilise maintenant le PaymentViewModel
   final List<PaymentViewModel> _payments = [];
 
-  double _globalDiscount = 0.0;
-  double _shippingFees = 0.0;
+  late final TextEditingController _globalDiscountController;
+  late final TextEditingController _shippingFeesController;
+  bool _isSaving = false;
 
   bool get _isFormDirty {
     return _selectedClient != null ||
@@ -53,13 +57,23 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         _items.isNotEmpty ||
         _payments.isNotEmpty;
   }
+  
+  @override
+  void initState() {
+    super.initState();
+    _globalDiscountController = TextEditingController(text: '0');
+    _shippingFeesController = TextEditingController(text: '0');
+  }
 
   @override
   void dispose() {
     _pageController.dispose();
+    _globalDiscountController.dispose();
+    _shippingFeesController.dispose();
     super.dispose();
   }
 
+  // ... (Les autres méthodes comme _next, _back, _addItem etc. restent inchangées)
   void _next() {
     if (_step == 0) {
       if (!_step1FormKey.currentState!.validate()) {
@@ -89,7 +103,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         }
       }
     }
-    // ✅ La validation de paiement n'est plus bloquante (vente à crédit)
     if (_step < 3) {
       setState(() => _step++);
       _pageController.nextPage(
@@ -158,73 +171,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     }
   }
 
-  Future<void> _scanAndAddItem() async {
-    final organizationId = ref.read(organizationIdProvider).value;
-    if (organizationId == null) return;
-
-    final scannedCode = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const SimpleBarcodeScannerScreen()),
-    );
-    if (scannedCode == null || scannedCode.isEmpty) return;
-
-    final getArticleBySku = ref.read(getArticleBySkuProvider);
-    final articleMatch =
-        await getArticleBySku(organizationId: organizationId, sku: scannedCode);
-
-    if (articleMatch == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Article non trouvé')));
-      }
-      return;
-    }
-
-    if (articleMatch.hasSerializedUnits) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                "Cet article doit être ajouté manuellement pour définir la quantité et scanner les codes.")),
-      );
-      return;
-    }
-
-    final existingItemIndex =
-        _items.indexWhere((item) => item.productId == articleMatch.id);
-    setState(() {
-      if (existingItemIndex != -1) {
-        final existingLine = _items[existingItemIndex];
-        if (existingLine.quantity < articleMatch.totalQuantity) {
-          _items[existingItemIndex] = SaleLineEntity(
-            id: existingLine.id,
-            productId: existingLine.productId,
-            name: existingLine.name,
-            unitPrice: existingLine.unitPrice,
-            quantity: existingLine.quantity + 1,
-            isSerialized: existingLine.isSerialized,
-            scannedCodes: existingLine.scannedCodes,
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Stock maximum atteint pour ${articleMatch.name}')));
-        }
-      } else {
-        if (articleMatch.totalQuantity > 0) {
-          _items.add(SaleLineEntity(
-            id: '${articleMatch.id}-${DateTime.now().millisecondsSinceEpoch}',
-            productId: articleMatch.id,
-            name: articleMatch.name,
-            quantity: 1,
-            unitPrice: articleMatch.sellPrice,
-            isSerialized: articleMatch.hasSerializedUnits,
-          ));
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Article ${articleMatch.name} en rupture de stock')));
-        }
-      }
-    });
-  }
-
   Future<void> _editItem(int index, SaleLineEntity line) async {
     final organizationId = ref.read(organizationIdProvider).value;
     if (organizationId == null) return;
@@ -277,7 +223,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     }
   }
 
-  // ✅ --- NOUVELLE LOGIQUE POUR AJOUTER UN PAIEMENT ---
   Future<void> _addPayment(double amountDue) async {
     final paymentMethods = ref.read(paymentMethodsProvider).value ?? [];
     if (paymentMethods.isEmpty) {
@@ -300,19 +245,105 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       });
     }
   }
-  // --- FIN ---
+
+
+  // ✅ --- MÉTHODE DE SAUVEGARDE ENTIÈREMENT MISE À JOUR ---
+  Future<void> _save(SaleStatus status) async {
+    if (_selectedClient == null || _selectedWarehouse == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Le client et l'entrepôt sont requis."),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      final organizationId = ref.read(organizationIdProvider).value;
+      final currentUser = ref.read(firebaseAuthProvider).currentUser;
+
+      if (organizationId == null) throw Exception("Organisation non trouvée.");
+      if (currentUser == null) throw Exception("Utilisateur non connecté.");
+
+      // 1. Récupérer le nom de l'utilisateur
+      final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(currentUser.uid).get();
+      final userData = userDoc.data();
+      final createdByName = (userData == null) 
+          ? null 
+          : '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
+
+      // 2. Calculer les totaux
+      final subTotal = _items.fold<double>(0, (sum, e) => e.lineSubtotal);
+      final discount = double.tryParse(_globalDiscountController.text) ?? 0.0;
+      final shipping = double.tryParse(_shippingFeesController.text) ?? 0.0;
+      final taxTotal = _items.fold<double>(0, (sum, e) => e.lineTax);
+      final grandTotal = subTotal - discount + taxTotal + shipping;
+
+      // 3. Préparer les entités
+      final paymentEntities = _payments.map((vm) {
+        return PaymentEntity(
+          id: const Uuid().v4(),
+          amount: vm.amountPaid,
+          date: _selectedDate,
+          paymentMethod: vm.methodIn,
+        );
+      }).toList();
+
+      final sale = SaleEntity(
+        id: const Uuid().v4(),
+        customerId: _selectedClient!.id,
+        customerName: _selectedClient!.name,
+        createdAt: _selectedDate,
+        status: status,
+        items: _items,
+        payments: paymentEntities,
+        globalDiscount: discount,
+        shippingFees: shipping,
+        createdBy: currentUser.uid,
+        createdByName: createdByName, // On passe le nom récupéré
+        grandTotal: grandTotal,       // On passe le total calculé
+      );
+
+      // 4. Appeler le contrôleur
+      final controller = ref.read(createSaleControllerProvider);
+      await controller.saveSale(
+        organizationId: organizationId,
+        sale: sale,
+        payments: _payments,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(status == SaleStatus.draft
+                ? 'Brouillon enregistré'
+                : 'Vente validée !'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final controller = ref.watch(createSaleControllerProvider);
-    final organizationId = ref.watch(organizationIdProvider).value;
     const backgroundColor = Colors.white;
 
     final clientsAsync = ref.watch(clientsStreamProvider);
     final warehousesAsync = ref.watch(warehousesProvider);
 
     return PopScope(
-      canPop: !_isFormDirty,
+      canPop: !_isFormDirty || _isSaving,
       onPopInvoked: (didPop) async {
         if (didPop) return;
         final shouldPop = await confirmSaleExit(context);
@@ -349,9 +380,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                 children: [
                   _buildStep1(clients, warehouses),
                   _buildStep2(),
-                  // ✅ L'étape 3 appelle la nouvelle méthode de build
-                  _buildStep3(ref.watch(paymentMethodsProvider).value ?? []),
-                  _buildStep4(controller, organizationId),
+                  _buildStep3(),
+                  _buildStep4(),
                 ],
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -366,6 +396,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   }
 
   Widget _buildStep1(List<ClientEntity> clients, List<Warehouse> warehouses) {
+    // ... Le contenu reste identique
     return Column(
       children: [
         Expanded(
@@ -402,7 +433,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
   }
 
   Widget _buildStep2() {
-    final subtotal = _items.fold<double>(0, (sum, item) => sum + item.lineTotal);
+    // ... Le contenu reste identique
+     final subtotal = _items.fold<double>(0, (sum, item) => sum + item.lineTotal);
 
     return Column(
       children: [
@@ -511,8 +543,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 
-  // ✅ --- MÉTHODE _buildStep3 COMPLÈTEMENT REFAITE ---
-  Widget _buildStep3(List<PaymentMethod> paymentMethods) {
+  Widget _buildStep3() {
+    // ... Le contenu reste identique
     final theme = Theme.of(context);
     final total = _items.fold<double>(0, (sum, e) => sum + e.lineTotal);
     final paid =
@@ -569,7 +601,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
                           leading: const Icon(Icons.check_circle_outline,
                               color: Colors.green),
                           title: Text(_money(payment.amountPaid)),
-                          subtitle: Text('Via: ${payment.method.name}'),
+                          subtitle: Text('Via: ${payment.methodIn.name}'),
                           trailing: IconButton(
                             icon: Icon(Icons.delete_outline,
                                 color: theme.colorScheme.error),
@@ -599,19 +631,14 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 
-  Widget _buildStep4(
-    CreateSaleController controller,
-    String? organizationId,
-  ) {
-    final subTotal =
-        _items.fold<double>(0, (sum, e) => sum + e.lineSubtotal);
-    final discountTotal =
-        _items.fold<double>(0, (sum, e) => sum + e.lineDiscount) +
-            _globalDiscount;
-    final taxTotal = _items.fold<double>(0, (sum, e) => sum + e.lineTax);
-    final grandTotal = subTotal - _globalDiscount + taxTotal + _shippingFees;
-    final paid =
-        _payments.fold<double>(0, (sum, p) => sum + p.amountPaid);
+  Widget _buildStep4() {
+    final subTotal = _items.fold<double>(0, (sum, e) => e.lineSubtotal);
+    final taxTotal = _items.fold<double>(0, (sum, e) => e.lineTax);
+    final discount = double.tryParse(_globalDiscountController.text) ?? 0.0;
+    final shipping = double.tryParse(_shippingFeesController.text) ?? 0.0;
+
+    final grandTotal = subTotal - discount + taxTotal + shipping;
+    final paid = _payments.fold<double>(0, (sum, p) => sum + p.amountPaid);
     final due = grandTotal - paid;
 
     return SingleChildScrollView(
@@ -619,75 +646,99 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text("Résumé",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
+          Text("Résumé et finalisation",
+              style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 16),
+          
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _globalDiscountController,
+                  decoration: const InputDecoration(
+                    labelText: 'Remise globale',
+                    suffixText: 'F CFA',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextFormField(
+                  controller: _shippingFeesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Frais livraison',
+                    suffixText: 'F CFA',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                   onChanged: (_) => setState(() {}),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
           Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              side: BorderSide(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _summaryRow('Sous-total', subTotal),
-                  _summaryRow('Remises', discountTotal),
-                  _summaryRow('TVA', taxTotal),
-                  _summaryRow('Frais de livraison', _shippingFees),
-                  const Divider(),
-                  _summaryRow('Total général', grandTotal, bold: true),
-                  _summaryRow('Total payé', paid),
-                  _summaryRow('Solde dû', due),
+                  _summaryRow('Sous-total articles', subTotal),
+                  _summaryRow('Remise globale', -discount),
+                  _summaryRow('Frais de livraison', shipping),
+                  const Divider(height: 24),
+                  _summaryRow('Total Général', grandTotal, bold: true),
+                  const SizedBox(height: 8),
+                  _summaryRow('Montant payé', paid),
+                  const Divider(height: 24, thickness: 1.5),
+                  _summaryRow('Solde Dû', due, bold: true, color: due > 0.01 ? Colors.red.shade700 : Colors.green.shade800),
                 ],
               ),
             ),
           ),
-          TextField(
-            decoration: const InputDecoration(labelText: 'Remise globale'),
-            keyboardType: TextInputType.number,
-            onChanged: (value) {
-              setState(() => _globalDiscount = double.tryParse(value) ?? 0.0);
-            },
-          ),
-          TextField(
-            decoration: const InputDecoration(labelText: 'Frais de livraison'),
-            keyboardType: TextInputType.number,
-            onChanged: (value) {
-              setState(() => _shippingFees = double.tryParse(value) ?? 0.0);
-            },
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: organizationId == null
-                ? null
-                : () async {
-                    if (_selectedClient == null) return;
-                    final sale = SaleEntity(
-                      id: DateTime.now().millisecondsSinceEpoch.toString(),
-                      customerId: _selectedClient!.id,
-                      customerName: _selectedClient!.name,
-                      createdAt: _selectedDate,
-                      items: _items,
-                      globalDiscount: _globalDiscount,
-                      shippingFees: _shippingFees,
-                      // TODO: Convertir PaymentViewModel en PaymentEntity
-                      payments: const [], 
-                    );
-                    await controller.saveSale(
-                      organizationId: organizationId,
-                      sale: sale,
-                    );
-                    if (mounted) {
-                      Navigator.of(context).pop();
-                    }
-                  },
-            child: const Text('Valider la Vente'),
-          ),
-          TextButton(
-            onPressed: () {},
-            child: const Text('Enregistrer comme Brouillon'),
-          ),
+          const SizedBox(height: 24),
+
+          if (_isSaving)
+            const Center(child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: CircularProgressIndicator(),
+            ))
+          else
+            Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => _save(SaleStatus.completed),
+                    style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16)),
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Valider la Vente'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => _save(SaleStatus.draft),
+                    child: const Text('Enregistrer comme brouillon'),
+                  ),
+                ),
+              ],
+            ),
           const SizedBox(height: 24),
           OutlinedButton(
-            onPressed: _back,
+            onPressed: _isSaving ? null : _back,
             child: const Text('Retour'),
           ),
         ],
@@ -695,10 +746,14 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 
-  Widget _summaryRow(String label, double value, {bool bold = false}) {
-    final style = bold ? const TextStyle(fontWeight: FontWeight.bold) : null;
+  Widget _summaryRow(String label, double value,
+      {bool bold = false, Color? color}) {
+    final style = TextStyle(
+        fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+        fontSize: bold ? 16 : 14,
+        color: color);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -709,8 +764,6 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     );
   }
 }
-
-// ✅ --- NOUVEAUX WIDGETS POUR L'UI DE PAIEMENT ---
 
 class _PaymentSummaryCard extends StatelessWidget {
   final double total;
@@ -797,7 +850,6 @@ class _SummaryRow extends StatelessWidget {
     );
   }
 }
-// --- FIN DES NOUVEAUX WIDGETS ---
 
 String _money(double v) =>
     NumberFormat.currency(locale: 'fr_FR', symbol: 'F', decimalDigits: 0)

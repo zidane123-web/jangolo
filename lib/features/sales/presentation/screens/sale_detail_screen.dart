@@ -23,13 +23,25 @@ class _SaleDetailScreenState extends ConsumerState<SaleDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  // ✅ --- NOUVELLE MÉTHODE POUR AFFICHER LES OPTIONS DE DOCUMENT ---
+  void _showGenerateDocumentOptions(BuildContext context) {
+    // Pour l'instant, ceci est un placeholder.
+    // Plus tard, il ouvrira un BottomSheet avec les options.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Génération de la facture en PDF... (logique à venir)'),
+        backgroundColor: Colors.blue,
+      ),
+    );
   }
 
   @override
@@ -54,11 +66,16 @@ class _SaleDetailScreenState extends ConsumerState<SaleDetailScreen>
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 child: _SaleHeader(sale: sale),
               ),
+              // ✅ --- NOUVELLE BARRE D'ACTIONS AJOUTÉE ICI ---
+              _ActionButtons(
+                onGenerateInvoice: () => _showGenerateDocumentOptions(context),
+              ),
               TabBar(
                 controller: _tabController,
                 tabs: const [
                   Tab(text: 'Aperçu'),
                   Tab(text: 'Paiements'),
+                  Tab(text: 'Historique'),
                 ],
               ),
               Expanded(
@@ -67,6 +84,7 @@ class _SaleDetailScreenState extends ConsumerState<SaleDetailScreen>
                   children: [
                     _OverviewTab(sale: sale),
                     _PaymentsTab(sale: sale),
+                    _HistoryTab(sale: sale),
                   ],
                 ),
               ),
@@ -127,6 +145,51 @@ class _SaleHeader extends StatelessWidget {
     );
   }
 }
+
+// ✅ --- NOUVEAU WIDGET POUR LA BARRE D'ACTIONS ---
+class _ActionButtons extends StatelessWidget {
+  final VoidCallback onGenerateInvoice;
+
+  const _ActionButtons({required this.onGenerateInvoice});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: onGenerateInvoice,
+              icon: const Icon(Icons.receipt_long_outlined, size: 18),
+              label: const Text('Générer la facture'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          IconButton(
+            onPressed: () {
+              // Placeholder pour le menu "Plus"
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Menu "Plus" à implémenter')),
+              );
+            },
+            icon: const Icon(Icons.more_vert),
+            style: IconButton.styleFrom(
+              side: BorderSide(color: Colors.grey.shade300),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 
 class _OverviewTab extends StatelessWidget {
   final SaleEntity sale;
@@ -254,6 +317,33 @@ class _PaymentsTab extends StatelessWidget {
   }
 }
 
+class _HistoryTab extends StatelessWidget {
+  final SaleEntity sale;
+  const _HistoryTab({required this.sale});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+      children: [
+        _HistoryEventTile(
+          icon: Icons.add_circle_outline,
+          title: 'Vente créée par ${sale.createdByName ?? 'un utilisateur inconnu'}',
+          date: sale.createdAt,
+        ),
+        const Divider(height: 24),
+        // Placeholder pour les modifications futures
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 24.0),
+            child: Text("Aucune modification enregistrée pour le moment."),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ================= PETITS WIDGETS DE PRÉSENTATION =================
 
 class _PaymentTile extends StatelessWidget {
@@ -283,6 +373,36 @@ class _PaymentTile extends StatelessWidget {
     );
   }
 }
+
+class _HistoryEventTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final DateTime date;
+
+  const _HistoryEventTile({
+    required this.icon,
+    required this.title,
+    required this.date,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: Colors.grey.shade100,
+        foregroundColor: Colors.grey.shade600,
+        child: Icon(icon, size: 20),
+      ),
+      title: Text(title, style: theme.textTheme.bodyLarge),
+      subtitle: Text(
+        DateFormat('le dd/MM/yyyy à HH:mm', 'fr_FR').format(date),
+        style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
+      ),
+    );
+  }
+}
+
 
 class _FinancialSummaryLine extends StatelessWidget {
   final String label;
@@ -375,4 +495,3 @@ String _money(double v) => NumberFormat.currency(
       return ('Payé', Colors.green.shade800);
   }
 }
-

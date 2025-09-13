@@ -9,6 +9,7 @@ class SaleLineEntity {
   final String? name;
   final double quantity;
   final double unitPrice;
+  final double costPrice;
   final DiscountType discountType;
   final double discountValue;
   final double vatRate;
@@ -23,6 +24,7 @@ class SaleLineEntity {
     this.name,
     required this.quantity,
     required this.unitPrice,
+    required this.costPrice,
     this.discountType = DiscountType.none,
     this.discountValue = 0.0,
     this.vatRate = 0.0,
@@ -46,4 +48,5 @@ class SaleLineEntity {
   double get lineSubtotal => (gross - lineDiscount).clamp(0, double.infinity);
   double get lineTax => lineSubtotal * vatRate;
   double get lineTotal => lineSubtotal + lineTax;
+  double get lineMargin => lineSubtotal - (quantity * costPrice);
 }

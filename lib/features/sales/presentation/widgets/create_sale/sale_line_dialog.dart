@@ -69,6 +69,7 @@ class _SaleLineDialogContentState extends State<_SaleLineDialogContent> {
       name: widget.article.name,
       quantity: quantity,
       unitPrice: price,
+      costPrice: widget.article.buyPrice,
       // Serialized info
       isSerialized: widget.article.hasSerializedUnits,
       scannedCodes: widget.existingLine?.scannedCodes ?? [],

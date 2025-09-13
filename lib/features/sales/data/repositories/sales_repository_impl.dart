@@ -30,7 +30,7 @@ class SalesRepositoryImpl implements SalesRepository {
     required String organizationId,
     required String saleId,
   }) async {
-    final (saleModel, lineModels) =
+    final (saleModel, lineModels, paymentModels) =
         await remoteDataSource.getSaleDetails(organizationId, saleId);
     if (saleModel == null) return null;
     return SaleEntity(
@@ -40,14 +40,14 @@ class SalesRepositoryImpl implements SalesRepository {
       status: saleModel.status,
       createdAt: saleModel.createdAt,
       items: lineModels,
-      payments: saleModel.payments, // On récupère aussi les paiements
+      payments: paymentModels,
       globalDiscount: saleModel.globalDiscount,
       shippingFees: saleModel.shippingFees,
       otherFees: saleModel.otherFees,
       createdBy: saleModel.createdBy,
       createdByName: saleModel.createdByName,
       hasDelivery: saleModel.hasDelivery,
-      grandTotal: saleModel.grandTotal, // ✅ LA CORRECTION EST ICI
+      grandTotal: saleModel.grandTotal,
     );
   }
 

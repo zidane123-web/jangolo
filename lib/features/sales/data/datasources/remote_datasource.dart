@@ -2,13 +2,14 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/client_model.dart';
+import '../models/payment_model.dart';
 import '../models/sale_line_model.dart';
 import '../models/sale_model.dart';
 
 abstract class SalesRemoteDataSource {
   Stream<List<SaleModel>> getAllSales(String organizationId);
   Future<void> createSale(String organizationId, SaleModel sale);
-  Future<(SaleModel?, List<SaleLineModel>)> getSaleDetails(
+  Future<(SaleModel?, List<SaleLineModel>, List<PaymentModel>)> getSaleDetails(
       String organizationId, String saleId);
   Future<void> updateSale(String organizationId, SaleModel sale);
 
@@ -78,6 +79,12 @@ class SalesRemoteDataSourceImpl implements SalesRemoteDataSource {
         batch.set(itemRef, itemModel.toJson());
       }
 
+      for (final payment in sale.payments) {
+        final paymentRef = saleRef.collection('payments').doc(payment.id);
+        final paymentModel = PaymentModel.fromEntity(payment);
+        batch.set(paymentRef, paymentModel.toJson());
+      }
+
       await batch.commit();
     } catch (e) {
       throw Exception('Impossible de sauvegarder la vente.');
@@ -85,7 +92,7 @@ class SalesRemoteDataSourceImpl implements SalesRemoteDataSource {
   }
 
   @override
-  Future<(SaleModel?, List<SaleLineModel>)> getSaleDetails(
+  Future<(SaleModel?, List<SaleLineModel>, List<PaymentModel>)> getSaleDetails(
       String organizationId, String saleId) async {
     final saleRef = firestore
         .collection('organisations')
@@ -95,16 +102,28 @@ class SalesRemoteDataSourceImpl implements SalesRemoteDataSource {
 
     final saleDoc = await saleRef.get();
     if (!saleDoc.exists) {
-      return (null, <SaleLineModel>[]);
+      return (null, [], []);
     }
 
-    final itemsSnapshot = await saleRef.collection('items').get();
+    final results = await Future.wait([
+      saleRef.collection('items').get(),
+      saleRef.collection('payments').get(),
+    ]);
+
+    final itemsSnapshot = results[0] as QuerySnapshot;
+    final paymentsSnapshot = results[1] as QuerySnapshot;
+
     final items = itemsSnapshot.docs
-        .map((doc) => SaleLineModel.fromJson(doc.data(), doc.id))
+        .map((doc) =>
+            SaleLineModel.fromJson(doc.data() as Map<String, dynamic>, doc.id))
+        .toList();
+
+    final payments = paymentsSnapshot.docs
+        .map((doc) => PaymentModel.fromSnapshot(doc))
         .toList();
 
     final sale = SaleModel.fromSnapshot(saleDoc);
-    return (sale, items);
+    return (sale, items, payments);
   }
 
   @override

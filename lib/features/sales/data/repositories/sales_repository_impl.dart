@@ -1,8 +1,10 @@
 // lib/features/sales/data/repositories/sales_repository_impl.dart
 
+import '../../domain/entities/payment_entity.dart';
 import '../../domain/entities/sale_entity.dart';
 import '../../domain/repositories/sales_repository.dart';
 import '../datasources/remote_datasource.dart';
+import '../models/payment_model.dart';
 import '../models/sale_model.dart';
 
 class SalesRepositoryImpl implements SalesRepository {
@@ -33,6 +35,8 @@ class SalesRepositoryImpl implements SalesRepository {
     final (saleModel, lineModels, paymentModels) =
         await remoteDataSource.getSaleDetails(organizationId, saleId);
     if (saleModel == null) return null;
+    final payments = paymentModels.map((p) => p as PaymentEntity).toList();
+
     return SaleEntity(
       id: saleModel.id,
       customerId: saleModel.customerId,
@@ -40,7 +44,7 @@ class SalesRepositoryImpl implements SalesRepository {
       status: saleModel.status,
       createdAt: saleModel.createdAt,
       items: lineModels,
-      payments: paymentModels,
+      payments: payments,
       globalDiscount: saleModel.globalDiscount,
       shippingFees: saleModel.shippingFees,
       otherFees: saleModel.otherFees,
@@ -58,5 +62,16 @@ class SalesRepositoryImpl implements SalesRepository {
   }) {
     final model = SaleModel.fromEntity(sale);
     return remoteDataSource.updateSale(organizationId, model);
+  }
+
+  @override
+  Future<void> addPayment({
+    required String organizationId,
+    required String saleId,
+    required PaymentEntity payment,
+  }) {
+    PaymentModel.fromEntity(payment);
+    // La logique de transaction est gérée dans SaleDetailController.
+    throw UnimplementedError('Handled by SaleDetailController transaction');
   }
 }

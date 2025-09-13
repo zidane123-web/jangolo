@@ -3,11 +3,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+
+import '../../../../core/providers/auth_providers.dart';
+import '../../../settings/presentation/providers/settings_providers.dart';
 import '../../data/services/invoice_generator_service.dart';
 import '../../domain/entities/payment_entity.dart';
 import '../../domain/entities/sale_entity.dart';
 import '../providers/sales_providers.dart';
-import 'invoice_preview_screen.dart'; // ✅ NOUVEL IMPORT
+import '../widgets/create_sale/add_payment_dialog.dart';
+import 'invoice_preview_screen.dart';
 
 class SaleDetailScreen extends ConsumerStatefulWidget {
   final String saleId;
@@ -21,6 +25,7 @@ class _SaleDetailScreenState extends ConsumerState<SaleDetailScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   bool _isGeneratingPdf = false;
+  bool _isProcessingPayment = false;
 
   @override
   void initState() {
@@ -68,6 +73,59 @@ class _SaleDetailScreenState extends ConsumerState<SaleDetailScreen>
     }
   }
 
+  Future<void> _collectPayment(SaleEntity sale) async {
+    final paymentMethods = ref.read(paymentMethodsProvider).value ?? [];
+    if (paymentMethods.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Aucun moyen de paiement configuré.'),
+        backgroundColor: Colors.orange,
+      ));
+      return;
+    }
+
+    final result = await showAddPaymentDialog(
+      context: context,
+      amountDue: sale.balanceDue,
+      paymentMethods: paymentMethods,
+    );
+
+    if (result != null && mounted) {
+      setState(() => _isProcessingPayment = true);
+      try {
+        final organizationId = ref.read(organizationIdProvider).value;
+        if (organizationId == null) throw Exception('Organisation non trouvée');
+
+        final controller = ref.read(saleDetailControllerProvider);
+        await controller.addPayment(
+          organizationId: organizationId,
+          sale: sale,
+          payment: result,
+        );
+
+        ref.invalidate(saleDetailProvider(widget.saleId));
+        ref.invalidate(paymentMethodsProvider);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Paiement enregistré avec succès !'),
+            backgroundColor: Colors.green,
+          ));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Erreur lors de l\'ajout du paiement: $e'),
+            backgroundColor: Colors.red,
+          ));
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isProcessingPayment = false);
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final saleAsync = ref.watch(saleDetailProvider(widget.saleId));
@@ -91,8 +149,11 @@ class _SaleDetailScreenState extends ConsumerState<SaleDetailScreen>
                 child: _SaleHeader(sale: sale),
               ),
               _ActionButtons(
+                sale: sale,
                 isGenerating: _isGeneratingPdf,
+                isProcessingPayment: _isProcessingPayment,
                 onGenerateInvoice: () => _generateInvoice(context, sale),
+                onCollectPayment: () => _collectPayment(sale),
               ),
               TabBar(
                 controller: _tabController,
@@ -171,25 +232,59 @@ class _SaleHeader extends StatelessWidget {
 }
 
 class _ActionButtons extends StatelessWidget {
+  final SaleEntity sale;
   final VoidCallback onGenerateInvoice;
+  final VoidCallback onCollectPayment;
   final bool isGenerating;
+  final bool isProcessingPayment;
 
-  const _ActionButtons({required this.onGenerateInvoice, required this.isGenerating});
+  const _ActionButtons({
+    required this.sale,
+    required this.onGenerateInvoice,
+    required this.onCollectPayment,
+    required this.isGenerating,
+    required this.isProcessingPayment,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final isUnpaid = sale.balanceDue > 0.01;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Row(
         children: [
+          if (isUnpaid)
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: isProcessingPayment ? null : onCollectPayment,
+                icon: isProcessingPayment
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.payment, size: 18),
+                label: Text(
+                    isProcessingPayment ? 'En cours...' : 'Encaisser'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.green.shade600,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          if (isUnpaid) const SizedBox(width: 12),
           Expanded(
-            child: FilledButton.icon(
+            child: OutlinedButton.icon(
               onPressed: isGenerating ? null : onGenerateInvoice,
               icon: isGenerating
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.receipt_long_outlined, size: 18),
-              label: Text(isGenerating ? 'Génération...' : 'Générer la facture'),
-              style: FilledButton.styleFrom(
+              label: Text(isGenerating ? '...' : 'Facture'),
+              style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
             ),
@@ -197,7 +292,6 @@ class _ActionButtons extends StatelessWidget {
           const SizedBox(width: 12),
           IconButton(
             onPressed: () {
-              // Placeholder pour le menu "Plus"
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Menu "Plus" à implémenter')),
               );

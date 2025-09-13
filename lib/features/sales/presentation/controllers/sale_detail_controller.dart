@@ -86,7 +86,7 @@ class SaleDetailController {
   }
 
   void _updateTreasuryAndBalances({
-    required FirebaseTransaction transaction,
+    required Transaction transaction, // ✅ CORRECTION ICI
     required String organizationId,
     required String saleId,
     required PaymentViewModel payment,
@@ -158,4 +158,3 @@ class SaleDetailController {
     }
   }
 }
-

@@ -3,12 +3,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:printing/printing.dart'; // ✅ --- NOUVEL IMPORT ---
-
-import '../../data/services/invoice_generator_service.dart'; // ✅ --- NOUVEL IMPORT ---
+import '../../data/services/invoice_generator_service.dart';
 import '../../domain/entities/payment_entity.dart';
 import '../../domain/entities/sale_entity.dart';
 import '../providers/sales_providers.dart';
+import 'invoice_preview_screen.dart'; // ✅ NOUVEL IMPORT
 
 class SaleDetailScreen extends ConsumerStatefulWidget {
   final String saleId;
@@ -41,12 +40,18 @@ class _SaleDetailScreenState extends ConsumerState<SaleDetailScreen>
     try {
       // 1. On appelle notre service pour créer le PDF en mémoire
       final pdfBytes = await InvoiceGeneratorService.generateInvoicePdf(sale);
-      
-      // 2. On utilise le package 'printing' pour afficher l'aperçu et les options
-      await Printing.layoutPdf(
-        onLayout: (format) async => pdfBytes,
-        name: 'Facture_Jangolo_${sale.id.substring(0, 6)}',
-      );
+
+      // 2. On navigue vers notre nouvel écran de prévisualisation
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => InvoicePreviewScreen(
+              pdfBytes: pdfBytes,
+              saleId: sale.id,
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -180,7 +185,7 @@ class _ActionButtons extends StatelessWidget {
           Expanded(
             child: FilledButton.icon(
               onPressed: isGenerating ? null : onGenerateInvoice,
-              icon: isGenerating 
+              icon: isGenerating
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.receipt_long_outlined, size: 18),
               label: Text(isGenerating ? 'Génération...' : 'Générer la facture'),

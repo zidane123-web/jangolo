@@ -49,6 +49,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
 
   late final TextEditingController _globalDiscountController;
   late final TextEditingController _shippingFeesController;
+  late final TextEditingController _notesController;
   bool _isSaving = false;
 
   bool get _isFormDirty {
@@ -63,6 +64,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     super.initState();
     _globalDiscountController = TextEditingController(text: '0');
     _shippingFeesController = TextEditingController(text: '0');
+    _notesController = TextEditingController();
   }
 
   @override
@@ -70,6 +72,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
     _pageController.dispose();
     _globalDiscountController.dispose();
     _shippingFeesController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -213,6 +216,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
           name: line.name,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
+          costPrice: line.costPrice,
           discountType: line.discountType,
           discountValue: line.discountValue,
           vatRate: line.vatRate,
@@ -269,8 +273,8 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       // 1. Récupérer le nom de l'utilisateur
       final userDoc = await FirebaseFirestore.instance.collection('utilisateurs').doc(currentUser.uid).get();
       final userData = userDoc.data();
-      final createdByName = (userData == null) 
-          ? null 
+      final createdByName = (userData == null)
+          ? null
           : '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
 
       // 2. Calculer les totaux
@@ -279,6 +283,11 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
       final shipping = double.tryParse(_shippingFeesController.text) ?? 0.0;
       final taxTotal = _items.fold<double>(0, (sum, e) => e.lineTax);
       final grandTotal = subTotal - discount + taxTotal + shipping;
+
+      // 2b. Génération du numéro de facture
+      final timestamp =
+          DateTime.now().millisecondsSinceEpoch.toString().substring(7);
+      final invoiceNumber = 'VTE-$timestamp';
 
       // 3. Préparer les entités
       final paymentEntities = _payments.map((vm) {
@@ -292,8 +301,11 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
 
       final sale = SaleEntity(
         id: const Uuid().v4(),
+        invoiceNumber: invoiceNumber,
         customerId: _selectedClient!.id,
         customerName: _selectedClient!.name,
+        warehouseId: _selectedWarehouse!.id,
+        warehouseName: _selectedWarehouse!.name,
         createdAt: _selectedDate,
         status: status,
         items: _items,
@@ -302,6 +314,7 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
         shippingFees: shipping,
         createdBy: currentUser.uid,
         createdByName: createdByName, // On passe le nom récupéré
+        notes: _notesController.text.trim(),
         grandTotal: grandTotal,       // On passe le total calculé
       );
 
@@ -681,8 +694,17 @@ class _CreateSaleScreenState extends ConsumerState<CreateSaleScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _notesController,
+            decoration: const InputDecoration(
+              labelText: 'Notes (facultatif)',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 3,
+          ),
           const SizedBox(height: 24),
-          
+
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(

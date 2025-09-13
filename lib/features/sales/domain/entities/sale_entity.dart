@@ -9,8 +9,11 @@ enum PaymentStatus { unpaid, partial, paid }
 
 class SaleEntity {
   final String id;
+  final String? invoiceNumber;
   final String customerId;
   final String? customerName;
+  final String warehouseId;
+  final String warehouseName;
   final SaleStatus status;
   final DateTime createdAt;
   final List<SaleLineEntity> items;
@@ -18,11 +21,12 @@ class SaleEntity {
   final double globalDiscount;
   final double shippingFees;
   final double otherFees;
-  
+
   final String? createdBy; // Contient l'ID de l'utilisateur
   final String? createdByName; // ✅ NOUVEAU: Contient le nom de l'utilisateur
-  
+
   final bool? hasDelivery;
+  final String? notes;
 
   // ✅ MODIFIÉ: Le grand total est maintenant un champ final pour être stocké.
   final double grandTotal;
@@ -30,8 +34,11 @@ class SaleEntity {
 
   const SaleEntity({
     required this.id,
+    this.invoiceNumber,
     required this.customerId,
     this.customerName,
+    required this.warehouseId,
+    required this.warehouseName,
     this.status = SaleStatus.draft,
     required this.createdAt,
     this.items = const [],
@@ -42,6 +49,7 @@ class SaleEntity {
     this.createdBy,
     this.createdByName, // ✅ Ajouté au constructeur
     this.hasDelivery,
+    this.notes,
     required this.grandTotal, // ✅ Requis dans le constructeur
   });
   
@@ -51,7 +59,7 @@ class SaleEntity {
 
   PaymentStatus get paymentStatus {
     if (totalPaid <= 0.01) return PaymentStatus.unpaid;
-    if (balanceDue > 0.01) return PaymentStatus.paid;
+    if (balanceDue > 0.01) return PaymentStatus.partial;
     return PaymentStatus.paid;
   }
 }

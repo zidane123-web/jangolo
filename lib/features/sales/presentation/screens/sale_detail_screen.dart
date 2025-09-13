@@ -3,7 +3,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:printing/printing.dart'; // ✅ --- NOUVEL IMPORT ---
 
+import '../../data/services/invoice_generator_service.dart'; // ✅ --- NOUVEL IMPORT ---
 import '../../domain/entities/payment_entity.dart';
 import '../../domain/entities/sale_entity.dart';
 import '../providers/sales_providers.dart';
@@ -19,6 +21,7 @@ class SaleDetailScreen extends ConsumerStatefulWidget {
 class _SaleDetailScreenState extends ConsumerState<SaleDetailScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  bool _isGeneratingPdf = false;
 
   @override
   void initState() {
@@ -32,16 +35,32 @@ class _SaleDetailScreenState extends ConsumerState<SaleDetailScreen>
     super.dispose();
   }
 
-  // ✅ --- NOUVELLE MÉTHODE POUR AFFICHER LES OPTIONS DE DOCUMENT ---
-  void _showGenerateDocumentOptions(BuildContext context) {
-    // Pour l'instant, ceci est un placeholder.
-    // Plus tard, il ouvrira un BottomSheet avec les options.
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Génération de la facture en PDF... (logique à venir)'),
-        backgroundColor: Colors.blue,
-      ),
-    );
+  // ✅ --- LOGIQUE DE GÉNÉRATION DE PDF MISE À JOUR ---
+  Future<void> _generateInvoice(BuildContext context, SaleEntity sale) async {
+    setState(() => _isGeneratingPdf = true);
+    try {
+      // 1. On appelle notre service pour créer le PDF en mémoire
+      final pdfBytes = await InvoiceGeneratorService.generateInvoicePdf(sale);
+      
+      // 2. On utilise le package 'printing' pour afficher l'aperçu et les options
+      await Printing.layoutPdf(
+        onLayout: (format) async => pdfBytes,
+        name: 'Facture_Jangolo_${sale.id.substring(0, 6)}',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de la génération du PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingPdf = false);
+      }
+    }
   }
 
   @override
@@ -66,9 +85,9 @@ class _SaleDetailScreenState extends ConsumerState<SaleDetailScreen>
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 child: _SaleHeader(sale: sale),
               ),
-              // ✅ --- NOUVELLE BARRE D'ACTIONS AJOUTÉE ICI ---
               _ActionButtons(
-                onGenerateInvoice: () => _showGenerateDocumentOptions(context),
+                isGenerating: _isGeneratingPdf,
+                onGenerateInvoice: () => _generateInvoice(context, sale),
               ),
               TabBar(
                 controller: _tabController,
@@ -146,11 +165,11 @@ class _SaleHeader extends StatelessWidget {
   }
 }
 
-// ✅ --- NOUVEAU WIDGET POUR LA BARRE D'ACTIONS ---
 class _ActionButtons extends StatelessWidget {
   final VoidCallback onGenerateInvoice;
+  final bool isGenerating;
 
-  const _ActionButtons({required this.onGenerateInvoice});
+  const _ActionButtons({required this.onGenerateInvoice, required this.isGenerating});
 
   @override
   Widget build(BuildContext context) {
@@ -160,9 +179,11 @@ class _ActionButtons extends StatelessWidget {
         children: [
           Expanded(
             child: FilledButton.icon(
-              onPressed: onGenerateInvoice,
-              icon: const Icon(Icons.receipt_long_outlined, size: 18),
-              label: const Text('Générer la facture'),
+              onPressed: isGenerating ? null : onGenerateInvoice,
+              icon: isGenerating 
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.receipt_long_outlined, size: 18),
+              label: Text(isGenerating ? 'Génération...' : 'Générer la facture'),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
